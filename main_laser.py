@@ -1,7 +1,7 @@
 from Laser.LaserEnable import Controller
 from YoloModel.yolov8 import detect_human_live
 
-from Manta.MantaMovement.Home import home_manta
+from Manta.MantaMovement.Home import home_manta, wait_for_complete
 from Manta.MantaMovement.Search import pan_z, get_current_z
 from Manta.MantaMovement.Tracking import track_z, set_current_z
 
@@ -14,7 +14,7 @@ laser = Controller()
 
 print("Homing Manta...")
 home_manta()
-time.sleep(10)
+wait_for_complete()
 
 print("Homing complete. Entering SEARCH mode.")
 

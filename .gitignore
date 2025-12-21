@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# ML / YOLO
+runs/
+datasets/
+*.pt
+*.onnx
+
+# OS / editor
+.vscode/
+.DS_Store
+
+# Logs / temp
+*.log

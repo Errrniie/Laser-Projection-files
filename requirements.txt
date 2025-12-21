@@ -4,3 +4,6 @@ torchaudio
 ultralytics
 opencv-python
 numpy
+
+Test32
+

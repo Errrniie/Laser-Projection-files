@@ -5,5 +5,3 @@ ultralytics
 opencv-python
 numpy
 
-Test32
-

@@ -1,6 +1,5 @@
 import time
 import requests
-
 # ---------------- CONFIG ----------------
 MANTA_IP = "192.168.8.127"
 

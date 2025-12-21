@@ -1,20 +1,11 @@
-import cv2
 from ultralytics import YOLO
-import numpy as np
 
 CONF_THRESH = 0.4
-CAMERA_INDEX = 4
 MODEL_PATH = "yolov8n.pt"
 DEVICE = "cuda"
 
 model = YOLO(MODEL_PATH)
 model.to(DEVICE)
-
-cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
-cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
 
 def detect_human(frame):
     """
@@ -59,9 +50,3 @@ def detect_human(frame):
     cy = (y1 + y2) // 2
 
     return True, (cx, cy), (x1, y1, x2, y2), best_conf
-
-def detect_human_live():
-    ret, frame = cap.read()
-    if not ret:
-        return False, None, None, 0.0
-    return detect_human(frame)

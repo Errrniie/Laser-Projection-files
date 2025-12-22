@@ -15,9 +15,11 @@ _pan_state = _PanState()
 PAN_STEP = 1        # mm (small = controllable)
 SEARCH_SPEED = 400    # mm/min
 
+
 def get_current_z():
     """Returns the last known z-position from searching."""
     return _pan_state.current_z
+
 
 def pan_z():
     """
@@ -75,8 +77,8 @@ class SearchThread(threading.Thread):
     def run(self):
         """Main loop for the search thread."""
         print("Search thread started.")
-        self._snap_to_grid()
         while not self._stop_event.is_set():
+            self._snap_to_grid()
             pan_z()
         print("Search thread stopped.")
 

@@ -20,6 +20,16 @@ def get_current_z():
     """Returns the last known z-position from searching."""
     return _pan_state.current_z
 
+def snap_search_to_grid():
+    """Move to the nearest whole number to avoid getting stuck."""
+    current_z = _pan_state.current_z
+    rounded_z = round(current_z)
+
+    if abs(current_z - rounded_z) > 0.01:  # Avoid tiny, unnecessary moves
+        print(f"Snapping to grid: {current_z:.2f} -> {rounded_z}")
+        Move(z=rounded_z - current_z, speed=SEARCH_SPEED)
+        wait_for_complete()
+        _pan_state.current_z = rounded_z
 
 def pan_z():
     """
@@ -63,22 +73,10 @@ class SearchThread(threading.Thread):
         if z_start is not None:
             _pan_state.current_z = z_start
 
-    def _snap_to_grid(self):
-        """Move to the nearest whole number to avoid getting stuck."""
-        current_z = _pan_state.current_z
-        rounded_z = round(current_z)
-
-        if abs(current_z - rounded_z) > 0.01:  # Avoid tiny, unnecessary moves
-            print(f"Snapping to grid: {current_z:.2f} -> {rounded_z}")
-            Move(z=rounded_z - current_z, speed=SEARCH_SPEED)
-            wait_for_complete()
-            _pan_state.current_z = rounded_z
-
     def run(self):
         """Main loop for the search thread."""
         print("Search thread started.")
         while not self._stop_event.is_set():
-            self._snap_to_grid()
             pan_z()
         print("Search thread stopped.")
 

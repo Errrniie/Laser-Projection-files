@@ -56,7 +56,7 @@ def main():
                 lost_count = 0
             else:
                 if not search_thread or not search_thread.is_alive():
-                    search_thread = SearchThread(z_start=current_z)
+                    search_thread = SearchThread()
                     search_thread.start()
 
         elif state == STATE_TRACK:
@@ -68,6 +68,7 @@ def main():
                         track_thread.stop()
                         track_thread = None
                     current_z = track_state.current_z
+                    search_state.current_z = current_z
                     state = STATE_SEARCH
                 continue
 

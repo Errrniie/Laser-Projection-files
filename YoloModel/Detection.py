@@ -21,15 +21,24 @@ def detect_human(frame):
         device=0,
         conf=CONF_THRESH,
         classes=[0],
-        verbose=True
+        verbose=False
     )
 
+    if not results or not results[0].boxes:
+        return False, None, None, 0.0
+
     boxes = results[0].boxes
-    if boxes is None:
+    if not hasattr(boxes, 'conf') or not hasattr(boxes, 'xyxy'):
         return False, None, None, 0.0
 
     best_conf = 0.0
     best_box = None
+
+    for i in range(len(boxes.conf)):
+        conf = boxes.conf[i].item()
+        if conf > best_conf:
+            best_conf = conf
+            best_box = boxes.xyxy[i].cpu().numpy().astype(int)
 
     if best_box is None:
         return False, None, None, 0.0

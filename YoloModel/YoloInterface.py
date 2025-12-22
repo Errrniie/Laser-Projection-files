@@ -8,7 +8,7 @@ camera = CameraThread(index=4, width=640, height=480, fps=30)
 camera.start()
 
 _WINDOW_NAME = "Goose Vision"
-DRAW_EVERY = 1
+DRAW_EVERY = 4
 _frame_count = 30
 
 

@@ -29,10 +29,11 @@ def main():
     lost_count = 0
 
     while True:
-         # ---- VISION ----
+        # ---- VISION ----
         human, center, bbox, conf, frame = detect_human_live()
 
-        if state == STATE_SEARCH and frame is not None:
+        # ---- VISUALS ----
+        if frame is not None:
             show_frame(frame, bbox, conf)
 
         # ---- STATE MACHINE ----

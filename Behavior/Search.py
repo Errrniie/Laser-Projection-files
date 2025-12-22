@@ -1,28 +1,39 @@
-STEP_MM = 0.4
-SEARCH_SPEED = 300  # slow, safe
-
-Z_MIN = 0.0
-Z_MAX = 20.0
-
-_current_z = 10.0
-_dir = -1
+from Motion.Move import move_all
+from Motion.Wait import wait_for_complete
+from Motion.Limits import Limits
 
 
-def pan_z_step():
-    global _current_z, _dir
+class _PanState:
+    def __init__(self):
+        self.current_z = Limits.Z_MIN
+        self.z_direction = 1  # +1 = up, -1 = down
 
-    next_z = _current_z + _dir * STEP_MM
 
-    if next_z <= Z_MIN:
-        next_z = Z_MIN
-        _dir = +1
-    elif next_z >= Z_MAX:
-        next_z = Z_MAX
-        _dir = -1
+_pan_state = _PanState()
 
-    # issue ONE deterministic move
-    move_all(z=next_z - _current_z, speed=SEARCH_SPEED)
+PAN_STEP = 0.5  # mm
+
+
+def pan_z():
+    state = _pan_state
+
+    # Reverse at limits
+    if state.current_z >= Limits.Z_MAX:
+        state.z_direction = -1
+    elif state.current_z <= Limits.Z_MIN:
+        state.z_direction = 1
+
+    dz = state.z_direction * PAN_STEP
+
+    # Clamp step so we never cross limits
+    if state.current_z + dz > Limits.Z_MAX:
+        dz = Limits.Z_MAX - state.current_z
+    elif state.current_z + dz < Limits.Z_MIN:
+        dz = Limits.Z_MIN - state.current_z
+
+    # Issue ONE relative move
+    move_all(z=dz, speed=500)
     wait_for_complete()
 
-    # now it is safe to update state
-    _current_z = next_z
+    # Update mechanical truth AFTER motion finishes
+    state.current_z += dz

@@ -1,3 +1,4 @@
+
 from Laser.LaserEnable import Controller
 
 from Motion.Home import home_manta
@@ -45,7 +46,6 @@ def main():
                 print("Target acquired → TRACK")
                 if search_thread:
                     search_thread.stop()
-                    search_thread.join()
                     search_thread = None
                 current_z = search_state.current_z
     
@@ -56,7 +56,7 @@ def main():
                 lost_count = 0
             else:
                 if not search_thread or not search_thread.is_alive():
-                    search_thread = SearchThread()
+                    search_thread = SearchThread(z_start=current_z)
                     search_thread.start()
 
         elif state == STATE_TRACK:
@@ -66,10 +66,8 @@ def main():
                     print("Target lost → SEARCH")
                     if track_thread:
                         track_thread.stop()
-                        track_thread.join()
                         track_thread = None
                     current_z = track_state.current_z
-                    search_state.current_z = current_z
                     state = STATE_SEARCH
                 continue
 

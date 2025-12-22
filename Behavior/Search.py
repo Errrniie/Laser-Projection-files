@@ -38,26 +38,31 @@ def pan_z():
     """
     state = _pan_state
 
-    # Reverse direction at limits
-    if state.current_z >= Limits.Z_MAX:
-        state.z_direction = -1
-    elif state.current_z <= Limits.Z_MIN:
-        state.z_direction = 1
+    # --- Proactive limit detection ---
+    # Predict the next move and see if it would exceed the limits.
+    next_dz = state.z_direction * PAN_STEP
+    predicted_z = state.current_z + next_dz
 
+    # If the next move would go out of bounds, reverse direction first.
+    if predicted_z > Limits.Z_MAX or predicted_z < Limits.Z_MIN:
+        state.z_direction *= -1
+    
+    # Now, calculate the actual move based on the (potentially updated) direction.
     dz = state.z_direction * PAN_STEP
 
-    # Clamp so we never exceed limits
-    if state.current_z + dz > Limits.Z_MAX:
+    # --- Clamping as a safeguard ---
+    # This should ideally not be triggered if the proactive check works, but it's good practice.
+    final_z = state.current_z + dz
+    if final_z > Limits.Z_MAX:
         dz = Limits.Z_MAX - state.current_z
-    elif state.current_z + dz < Limits.Z_MIN:
+    elif final_z < Limits.Z_MIN:
         dz = Limits.Z_MIN - state.current_z
 
-    # If no movement possible, flip direction and exit
-    if dz == 0:
-        state.z_direction *= -1
+    # --- Execute Move ---
+    # Don't make infinitesimally small moves, as this can hang the controller.
+    if abs(dz) < 0.001:
         return
 
-    # --- Deterministic motion ---
     Move(z=dz, speed=SEARCH_SPEED)
     wait_for_complete()
 
@@ -76,6 +81,7 @@ class SearchThread(threading.Thread):
     def run(self):
         """Main loop for the search thread."""
         print("Search thread started.")
+        snap_search_to_grid() # Always start on the grid
         while not self._stop_event.is_set():
             pan_z()
         print("Search thread stopped.")

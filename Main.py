@@ -1,9 +1,10 @@
+
 from Laser.LaserEnable import Controller
 
 from Motion.Home import home_manta
 from Motion.Wait import wait_for_complete,init_ws
 
-from Behavior.Search import SearchThread, _pan_state as search_state, snap_search_to_grid
+from Behavior.Search import SearchThread, _pan_state as search_state
 from Behavior.Tracking import TrackThread, reset_tracking, _state as track_state
 import time
 
@@ -46,7 +47,7 @@ def main():
                 if search_thread:
                     search_thread.stop()
                     search_thread = None
-                current_z = search_state.current_z
+                current_z = search_state.current_z # Corrected accessor
     
                 reset_tracking(z_start=current_z)
                 track_thread = TrackThread(center[0], FRAME_WIDTH)
@@ -67,14 +68,8 @@ def main():
                         track_thread.stop()
                         track_thread = None
 
-                    # IMPORTANT: First, update the search state with the last known Z
+                    # Pass the last known Z from tracking to the main loop's Z
                     current_z = track_state.current_z
-                    search_state.current_z = current_z
-
-                    # SECOND: Snap the search state to the grid
-                    snap_search_to_grid()
-                    current_z = search_state.current_z # Update local z with snapped value
-
                     state = STATE_SEARCH
                 continue
 

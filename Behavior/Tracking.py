@@ -1,3 +1,4 @@
+import threading
 from Motion.Move import Move
 from Motion.Wait import wait_for_complete
 from Motion.Limits import Limits
@@ -66,3 +67,26 @@ def track(cx, frame_width):
 
     # --- Update mechanical truth ---
     state.current_z += dz
+
+
+class TrackThread(threading.Thread):
+    def __init__(self, cx, frame_width, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.daemon = True
+        self.cx = cx
+        self.frame_width = frame_width
+        self._stop_event = threading.Event()
+
+    def run(self):
+        """Main loop for the tracking thread."""
+        print("Track thread started.")
+        while not self._stop_event.is_set():
+            _track_step(self.cx, self.frame_width)
+        print("Track thread stopped.")
+
+    def stop(self):
+        """Signals the thread to stop."""
+        self._stop_event.set()
+
+    def update_center(self, cx):
+        self.cx = cx

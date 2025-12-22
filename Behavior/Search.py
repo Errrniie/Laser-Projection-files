@@ -1,3 +1,4 @@
+import threading
 from Motion.Move import Move
 from Motion.Wait import wait_for_complete
 from Motion.Limits import Limits
@@ -17,9 +18,8 @@ SEARCH_SPEED = 800    # mm/min
 
 def pan_z():
     """
-    Deterministic Z-axis search step.
+    Performs one step of the pan search.
     Blocks until motion completes.
-    Safe to interrupt at any time.
     """
     state = _pan_state
 
@@ -48,3 +48,21 @@ def pan_z():
 
     # Update confirmed mechanical state
     state.current_z += dz
+
+
+class SearchThread(threading.Thread):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.daemon = True
+        self._stop_event = threading.Event()
+
+    def run(self):
+        """Main loop for the search thread."""
+        print("Search thread started.")
+        while not self._stop_event.is_set():
+            _pan_z_step()
+        print("Search thread stopped.")
+
+    def stop(self):
+        """Signals the thread to stop."""
+        self._stop_event.set()

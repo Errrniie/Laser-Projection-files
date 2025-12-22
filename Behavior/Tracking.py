@@ -6,8 +6,8 @@ from Motion.Limits import Limits
 # ---------------- CONFIG ----------------
 GAIN_MM_PER_PX = 0.0030
 DEADZONE_PX = 15
-MAX_STEP_MM = 0.8
-TRACK_SPEED = 400
+MAX_STEP_MM = 1.0
+TRACK_SPEED = 800
 # ---------------------------------------
 
 class _TrackState:
@@ -81,7 +81,7 @@ class TrackThread(threading.Thread):
         """Main loop for the tracking thread."""
         print("Track thread started.")
         while not self._stop_event.is_set():
-            _track_step(self.cx, self.frame_width)
+            track(self.cx, self.frame_width)
         print("Track thread stopped.")
 
     def stop(self):

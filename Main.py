@@ -3,8 +3,8 @@ from Laser.LaserEnable import Controller
 from Motion.Home import home_manta
 from Motion.Wait import wait_for_complete,init_ws
 
-from Behavior.Search import SearchThread
-from Behavior.Tracking import TrackThread, reset_tracking
+from Behavior.Search import SearchThread, _pan_state as search_state
+from Behavior.Tracking import TrackThread, reset_tracking, _state as track_state
 import time
 
 from YoloModel.YoloInterface import show_frame, detect_human_live
@@ -18,7 +18,7 @@ LOST_LIMIT = 8
 
 def main():
     init_ws()
-    laser = Controller()
+    #laser = Controller()
 
     print("Homing Manta...")
     home_manta()
@@ -29,6 +29,7 @@ def main():
     lost_count = 0
     search_thread = None
     track_thread = None
+    current_z = 10.0
 
     while True:
         # ---- VISION ----
@@ -46,7 +47,9 @@ def main():
                     search_thread.stop()
                     search_thread.join()
                     search_thread = None
-                reset_tracking()
+                current_z = search_state.current_z
+    
+                reset_tracking(z_start=current_z)
                 track_thread = TrackThread(center[0], FRAME_WIDTH)
                 track_thread.start()
                 state = STATE_TRACK

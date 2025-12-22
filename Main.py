@@ -68,6 +68,8 @@ def main():
                         track_thread.stop()
                         track_thread.join()
                         track_thread = None
+                    current_z = track_state.current_z
+                    search_state.current_z = current_z
                     state = STATE_SEARCH
                 continue
 

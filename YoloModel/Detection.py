@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-CONF_THRESH = 0.4
+CONF_THRESH = 0.8
 MODEL_PATH = "yolov8n.pt"
 DEVICE = "cuda"
 
@@ -20,7 +20,8 @@ def detect_human(frame):
         frame,
         device=0,
         conf=CONF_THRESH,
-        verbose=False
+        classes=[0],
+        verbose=True
     )
 
     boxes = results[0].boxes
@@ -29,18 +30,6 @@ def detect_human(frame):
 
     best_conf = 0.0
     best_box = None
-
-    for box, cls, conf in zip(
-        boxes.xyxy.cpu().numpy(),
-        boxes.cls.cpu().numpy(),
-        boxes.conf.cpu().numpy()
-    ):
-        if int(cls) != 0 or conf < CONF_THRESH:
-            continue
-
-        if conf > best_conf:
-            best_conf = conf
-            best_box = box.astype(int)
 
     if best_box is None:
         return False, None, None, 0.0

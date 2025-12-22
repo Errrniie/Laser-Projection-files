@@ -1,27 +1,22 @@
-import websocket
-import json
+import websocket, json
 
 MOONRAKER_WS = "ws://192.168.8.127:7125/websocket"
 
-def wait_for_complete(timeout=2.0):
-    ws = websocket.create_connection(MOONRAKER_WS)
-    ws.settimeout(timeout)
+_ws = None
 
-    # subscribe to gcode responses
-    ws.send(json.dumps({
+def init_ws():
+    global _ws
+    _ws = websocket.create_connection(MOONRAKER_WS)
+    _ws.send(json.dumps({
         "jsonrpc": "2.0",
         "method": "printer.objects.subscribe",
         "params": {"objects": {"gcode": ["responses"]}},
         "id": 1
     }))
 
-    try:
-        while True:
-            msg = json.loads(ws.recv())
-
-            if msg.get("method") == "notify_gcode_response":
-                text = msg["params"][0].strip()
-                if text == "// complete":
-                    return
-    finally:
-        ws.close()
+def wait_for_complete():
+    while True:
+        msg = json.loads(_ws.recv())
+        if msg.get("method") == "notify_gcode_response":
+            if msg["params"][0].strip() == "// complete":
+                return

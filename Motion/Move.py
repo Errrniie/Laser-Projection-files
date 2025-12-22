@@ -3,7 +3,7 @@ import requests
 MANTA_IP = "192.168.8.127"
 MOONRAKER_HTTP = f"http://{MANTA_IP}/printer/gcode/script"
 
-def move_all(x=None, y=None, z=None, speed=1200):
+def Move(x=None, y=None, z=None, speed=1200):
     parts = []
 
     if x is not None:
@@ -20,5 +20,18 @@ def move_all(x=None, y=None, z=None, speed=1200):
     requests.post(
         MOONRAKER_HTTP,
         json={"script": cmd},
-        timeout=0.2
     )
+    print("Sending:", cmd)
+
+def Search(z=None, speed=400):
+    parts = []
+    if z is not None:
+        parts.append(f"Z={z:.4f}")
+    parts.append(f"SPEED={speed}")
+
+    cmd = "SEARCH " + " ".join(parts)
+
+    try:
+        requests.post(MOONRAKER_HTTP, json={"script": cmd}, timeout=0.1)
+    except requests.exceptions.ReadTimeout:
+        pass

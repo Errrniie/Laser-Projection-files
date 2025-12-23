@@ -25,7 +25,7 @@ def run_calibration():
     calibration = []
     
     # Attempt to open the camera
-    cap = cv2.VideoCapture(4)
+    cap = cv2.VideoCapture(3)
     if not cap.isOpened():
         print("Could not open camera at index 4, trying index 0.")
         cap = cv2.VideoCapture(0)

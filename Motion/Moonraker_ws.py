@@ -50,6 +50,9 @@ class MoonrakerWSClient:
         self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
         self._rx_thread.start() 
 
+    def is_connected(self) -> bool:
+        return self._ws is not None
+
     def close(self) -> None:
         self._stop.set()
 

@@ -4,14 +4,14 @@ from Motion.Wait import wait_for_complete
 from Behavior.MotionGate import motion_lock, motion_in_flight
 
 
-def wait_and_release(timeout=2.0):
+def wait_and_release(ws_client: MoonrakerWSClient, timeout=2.0):
     """
     Waits for the current move to complete, then clears the motion_in_flight event.
     This should be run in a background thread.
     """
     try:
         # wait_for_complete blocks until the move is done
-        wait_for_complete(timeout=timeout) 
+        wait_for_complete(ws_client, timeout_s=timeout) 
     except Exception as e:
         print(f"[MotionGate] Exception while waiting for move: {e}")
     finally:
@@ -41,7 +41,7 @@ def safe_move(ws_client: MoonrakerWSClient, z: float, speed: int):
             )
             
             # Start a background thread to wait for completion and release the gate.
-            release_thread = threading.Thread(target=wait_and_release, daemon=True)
+            release_thread = threading.Thread(target=wait_and_release, args=(ws_client,), daemon=True)
             release_thread.start()
 
         except Exception as e:
@@ -66,7 +66,7 @@ def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, speed: int, timeo
                 {"script": f"G90 \n G0 Z{z} F{speed * 60}"}
             )
             # Block and wait right here.
-            wait_for_complete(timeout=timeout)
+            wait_for_complete(ws_client, timeout_s=timeout)
         except Exception as e:
             print(f"Error during safe_move_and_wait: {e}")
         finally:

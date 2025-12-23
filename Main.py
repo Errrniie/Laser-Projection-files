@@ -43,6 +43,9 @@ def main():
 
         # ---- STATE MACHINE ----
         if state == STATE_SEARCH:
+            if search_thread is None:
+                search_thread = SearchThread()
+                search_thread.start()
             if human: 
                 transition_start = time.time()
                 print("Target acquired → TRACK")

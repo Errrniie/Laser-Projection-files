@@ -4,12 +4,12 @@ from Motion.Moonraker_ws import MoonrakerWSClient
 import time
 
 # --- PID Controller Constants ---
-Kp = 0.014
-Ki = 0.003
-Kd = 0.005
-TRACKING_SPEED = 1200
+Kp = 0.003 
+Ki = 0.000
+Kd = 0.000
+TRACKING_SPEED = 800
 DEADZONE = 15
-LOOP_INTERVAL = 0.05  # 50ms, which is 20Hz
+LOOP_INTERVAL = 0.025  # 50ms, which is 20Hz
 
 def reset_tracking(z_start=None):
     """Resets tracking-related state if needed in the future."""

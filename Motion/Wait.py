@@ -1,8 +1,10 @@
 import websocket, json
+import threading
 
 MOONRAKER_WS = "ws://192.168.8.127:7125/websocket"
 
 _ws = None
+_ws_lock = threading.Lock()
 
 def init_ws():
     global _ws
@@ -20,3 +22,4 @@ def wait_for_complete():
         if msg.get("method") == "notify_gcode_response":
             if msg["params"][0].strip() == "// complete":
                 return
+

@@ -71,12 +71,13 @@ def main():
                     # Pass the last known Z from tracking to the main loop's Z
                     current_z = track_state.current_z
                     state = STATE_SEARCH
-                    continue
-
+                    
+        else:
             lost_count = 0
-            cx, cy = center
-            if track_thread:
-                track_thread.update_center(cx)
+            if center is not None:
+                cx, cy = center
+                if track_thread:
+                    track_thread.update_center(cx)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import threading
 from Motion.Move import Move
 from Motion.Wait import wait_for_complete
 from Motion.Limits import Limits
-from Position import get_motor_positions
+from Motion.Position import get_motor_positions
 
 class _PanState:
     def __init__(self):
@@ -24,7 +24,7 @@ def pan_z():
         if not pos or 'z' not in pos:
             print("Could not get current Z position.")
             return
-        current_z = pos['z']
+        current_z = float(pos['z'])
     except Exception as e:
         print(f"Error getting motor positions: {e}")
         return

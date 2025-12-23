@@ -2,18 +2,18 @@
 from Motion.Home import home_manta
 from Motion.Wait import wait_for_complete, init_ws
 from Motion.Move import Move
-from Position import get_motor_positions
+from Motion.Position import get_motor_positions
 
 from Behavior.Search import SearchThread
 from Behavior.Tracking import TrackThread, reset_tracking
 import time
 
-from YoloModel.YoloInterface import show_frame, detect_human_live, start_vision, stop_vision
+from YoloModel.YoloInterface import show_frame, detect_human_live,start_vision, stop_vision
 
 FRAME_WIDTH = 640
 STATE_SEARCH = "SEARCH"
 STATE_TRACK = "TRACK"
-LOST_LIMIT = 15  # Reset to a more reasonable value
+LOST_LIMIT = 30  # Reset to a more reasonable value
 SEARCH_SPEED = 400
 
 def main():
@@ -77,7 +77,7 @@ def main():
                         try:
                             pos = get_motor_positions()
                             if pos and 'z' in pos:
-                                current_z = pos['z']
+                                current_z = float(pos['z'])
                                 rounded_z = round(current_z)
                                 diff_z = rounded_z - current_z
                                 

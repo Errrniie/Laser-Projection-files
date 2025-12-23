@@ -1,6 +1,6 @@
 
 from Motion.Home import home_manta
-from Motion.Wait import wait_for_complete, init_ws
+from Motion.Wait import wait_for_complete
 from Motion.Move import Move
 from Motion.Position import get_motor_positions
 from Motion.Moonraker_ws import MoonrakerWSClient
@@ -21,14 +21,13 @@ STATE_TRACK = "TRACK"
 LOST_LIMIT = 30
 SEARCH_SPEED = 400
 
-ws_client = MoonrakerWSClient(WS_URL)
-ws_client.connect()
-
 def main():
-    init_ws()
+    ws_client = MoonrakerWSClient(WS_URL)
+    ws_client.connect()
+
     print("Homing Manta...")
-    home_manta()
-    wait_for_complete()
+    home_manta(ws_client)
+    wait_for_complete(ws_client)
     print("Homing complete. Entering SEARCH mode.")
 
     start_vision()
@@ -51,7 +50,7 @@ def main():
 
             if state == STATE_SEARCH:
                 if search_thread is None and not should_quit():
-                    search_thread = SearchThread()
+                    search_thread = SearchThread(ws_client)
                     search_thread.start()
                 
                 if time.time() - last_lost_time < 2.0:
@@ -65,7 +64,7 @@ def main():
                         search_thread = None
                     
                     reset_tracking()
-                    track_thread = TrackThread(center[0], FRAME_WIDTH)
+                    track_thread = TrackThread(center[0], FRAME_WIDTH, ws_client)
                     track_thread.start()
                     state = STATE_TRACK
                     lost_count = 0
@@ -82,7 +81,7 @@ def main():
                             track_thread = None
                         
                         try:
-                            pos = get_motor_positions()
+                            pos = get_motor_positions(ws_client)
                             if pos and 'z' in pos:
                                 current_z = float(pos['z'])
                                 rounded_z = round(current_z)
@@ -90,8 +89,8 @@ def main():
                                 
                                 if abs(diff_z) > 0.001:
                                     print(f"Snapping to grid: {current_z:.3f} -> {rounded_z}. Moving by {diff_z:.3f}")
-                                    Move(z=diff_z, speed=SEARCH_SPEED)
-                                    wait_for_complete()
+                                    Move(ws_client, z=diff_z, speed=SEARCH_SPEED)
+                                    wait_for_complete(ws_client)
                         except Exception as e:
                             print(f"Error during grid snapping: {e}")
                         
@@ -108,7 +107,6 @@ def main():
         print("Program interrupted by user.")
     finally:
         print("Shutdown requested...")
-        # Signal all threads to stop
         if user_input_thread:
             user_input_thread.stop()
         if search_thread:
@@ -117,7 +115,6 @@ def main():
             track_thread.stop()
         stop_vision()
         
-        # Wait for threads to finish
         if user_input_thread and user_input_thread.is_alive():
             user_input_thread.join()
         if search_thread and search_thread.is_alive():
@@ -125,18 +122,18 @@ def main():
         if track_thread and track_thread.is_alive():
             track_thread.join()
 
-        # Final safety move: return Z to 0
         try:
             print("Returning Z to home position...")
-            pos = get_motor_positions()
+            pos = get_motor_positions(ws_client)
             if pos and 'z' in pos:
                 current_z = float(pos['z'])
-                Move(z=-current_z, speed=1000) # Move at a good speed
-                wait_for_complete()
+                Move(ws_client, z=-current_z, speed=1000)
+                wait_for_complete(ws_client)
             print("Z axis homed.")
         except Exception as e:
             print(f"Could not home Z axis: {e}")
         
+        ws_client.close()
         print("Shutdown complete.")
 
 if __name__ == "__main__":

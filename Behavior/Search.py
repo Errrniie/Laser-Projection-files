@@ -15,14 +15,14 @@ _pan_state = _PanState()
 PAN_STEP = 1
 SEARCH_SPEED = 400
 
-def pan_z():
+def pan_z(ws_client: MoonrakerWSClient):
     """
     Performs one step of the pan search.
     Blocks until motion completes.
     """
     state = _pan_state
     try:
-        pos = get_motor_positions()
+        pos = get_motor_positions(ws_client)
         if not pos or 'z' not in pos:
             print("Could not get current Z position.")
             return
@@ -48,20 +48,21 @@ def pan_z():
     if abs(dz) < 0.001:
         return
 
-    Move(z=dz, speed=SEARCH_SPEED)
-    wait_for_complete()
+    Move(ws_client, z=dz, speed=SEARCH_SPEED)
+    wait_for_complete(ws_client)
 
 class SearchThread(threading.Thread):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, ws_client: MoonrakerWSClient, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.daemon = True
         self._stop_event = threading.Event()
+        self._ws_client = ws_client
 
     def run(self):
         """Main loop for the search thread."""
         print("Search thread started.")
         while not self._stop_event.is_set():
-            pan_z()
+            pan_z(self._ws_client)
         print("Search thread stopped.")
 
     def stop(self):

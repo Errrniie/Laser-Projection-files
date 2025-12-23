@@ -1,16 +1,10 @@
-# Manta/MantaMovement/Home.py
-import requests
-import json 
-import websocket
+from Motion.Moonraker_ws import MoonrakerWSClient
 
-MANTA_IP = "192.168.8.127"
-
-def home_manta():
+def home_manta(ws_client: MoonrakerWSClient):
     try:
-        requests.post(
-            f"http://{MANTA_IP}/printer/gcode/script",
-            json={"script": "G28"},
-            timeout=0.2   # SHORT timeout — do not wait for homing
+        ws_client.call(
+            "printer.gcode.script",
+            {"script": "G28"},
         )
-    except requests.exceptions.RequestException:
-        pass  # ignore timeout; homing is still happening
+    except Exception:
+        pass # a timeout is expected here

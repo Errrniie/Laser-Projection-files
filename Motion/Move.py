@@ -1,9 +1,8 @@
-import requests
+from __future__ import annotations
+from Motion.Moonraker_ws import MoonrakerWSClient
 
-MANTA_IP = "192.168.8.127"
-MOONRAKER_HTTP = f"http://{MANTA_IP}/printer/gcode/script"
-
-def Move(x=None, y=None, z=None, speed=1200):
+def Move(ws_client: MoonrakerWSClient, x: float | None = None, y: float | None = None, z: float | None = None, speed: int = 1200):
+    """Sends a relative move command to the printer."""
     parts = []
 
     if x is not None:
@@ -13,25 +12,15 @@ def Move(x=None, y=None, z=None, speed=1200):
     if z is not None:
         parts.append(f"Z={z:.4f}")
 
+    if not parts:
+        return  # No move to make
+
     parts.append(f"SPEED={speed}")
 
     cmd = "MOVE " + " ".join(parts)
 
-    requests.post(
-        MOONRAKER_HTTP,
-        json={"script": cmd},
-    )
     print("Sending:", cmd)
-
-def Search(z=None, speed=400):
-    parts = []
-    if z is not None:
-        parts.append(f"Z={z:.4f}")
-    parts.append(f"SPEED={speed}")
-
-    cmd = "SEARCH " + " ".join(parts)
-
-    try:
-        requests.post(MOONRAKER_HTTP, json={"script": cmd}, timeout=0.1)
-    except requests.exceptions.ReadTimeout:
-        pass
+    ws_client.call(
+        "printer.gcode.script",
+        {"script": cmd},
+    )

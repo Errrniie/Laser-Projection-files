@@ -1,6 +1,6 @@
 import threading
 from Motion.Move import Move
-from Motion.Position import get_motor_positions
+from Motion.Moonraker_ws import MoonrakerWSClient
 import time
 
 # --- PID Controller Constants ---
@@ -17,10 +17,11 @@ def reset_tracking(z_start=None):
     print("Tracking state is managed by TrackThread instances.")
 
 class TrackThread(threading.Thread):
-    def __init__(self, cx, frame_width, *args, **kwargs):
+    def __init__(self, cx, frame_width, ws_client: MoonrakerWSClient, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.daemon = True
         self._stop_event = threading.Event()
+        self._ws_client = ws_client
 
         # --- Thread-safe tracking variables ---
         self._lock = threading.Lock()
@@ -79,7 +80,7 @@ class TrackThread(threading.Thread):
         dz = max(-1.0, min(1.0, output))
 
         # Move the motor
-        Move(z=dz, speed=TRACKING_SPEED)
+        Move(self._ws_client, z=dz, speed=TRACKING_SPEED)
 
     def update_center(self, cx):
         """

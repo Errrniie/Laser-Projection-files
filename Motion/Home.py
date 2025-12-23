@@ -1,30 +1,31 @@
 from Motion.Moonraker_ws import MoonrakerWSClient
 from Behavior.MotionGate import motion_lock, motion_in_flight
-from Motion.Move import wait_and_release
 
 def home_manta(ws_client: MoonrakerWSClient):
     """
-    Homes the Manta's axes in a thread-safe manner.
-    It acquires the motion lock and sets the in-flight event.
+    Homes the Manta's axes in a blocking, thread-safe manner.
+    This function will wait until homing is fully complete before returning.
     """
-    # First, wait for any existing move to finish and for the lock to be free
-    if motion_in_flight.is_set():
-        wait_and_release() # Clear the previous move if it's stuck
-
+    # Acquire the motion lock, waiting if necessary. This ensures no other
+    # motion commands can be sent while homing.
     with motion_lock:
-        motion_in_flight.set()
+        motion_in_flight.set() # Signal that a critical motion is in progress
         try:
-            print("Sending G28 (Home) command...")
+            print("Sending G28 (Home) command and waiting for completion...")
+            # Use a long timeout because homing can take a while.
+            # The ws_client.call will block until the command is acknowledged
+            # by Moonraker as complete.
             ws_client.call(
                 "printer.gcode.script",
                 {"script": "G28"},
+                timeout_s=30.0 # 30-second timeout for homing
             )
-        except Exception:
-            # A timeout is expected here as the command takes a long time
-            # and the library doesn't wait for completion.
-            pass 
-        
-        # We must now wait for the homing to complete before releasing the gate
-        print("Waiting for homing to complete...")
-        wait_and_release(timeout=20.0) # Use a long timeout for homing
-        print("Homing complete, motion gate released.")
+            print("Homing complete.")
+        except Exception as e:
+            print(f"An error occurred during homing: {e}")
+            # Re-raise the exception to signal failure to the caller
+            raise
+        finally:
+            # Ensure the motion flag is cleared, opening the gate for other moves.
+            motion_in_flight.clear()
+            print("Motion gate released after homing.")

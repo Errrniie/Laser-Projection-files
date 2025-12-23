@@ -3,19 +3,16 @@ from Motion.Moonraker_ws import MoonrakerWSClient
 from Motion.Wait import wait_for_complete
 from Behavior.MotionGate import motion_lock, motion_in_flight
 
-
 def wait_and_release(ws_client: MoonrakerWSClient, timeout=2.0):
     """
     Waits for the current move to complete, then clears the motion_in_flight event.
     This should be run in a background thread.
     """
     try:
-        # wait_for_complete blocks until the move is done
-        wait_for_complete(ws_client, timeout_s=timeout) 
+        wait_for_complete(ws_client, timeout_s=timeout)
     except Exception as e:
         print(f"[MotionGate] Exception while waiting for move: {e}")
     finally:
-        # This is the crucial step: signal that the motion is finished.
         motion_in_flight.clear()
         print("[MotionGate] Move complete. Gate is now open.")
 
@@ -23,13 +20,10 @@ def safe_move(ws_client: MoonrakerWSClient, z: float, speed: int):
     """
     A non-blocking, thread-safe function to move the Manta Z-axis.
     It respects the motion gate and is ideal for real-time tracking.
-    If a move is already in flight, this function does nothing.
     """
-    # If a move is already in progress, drop this correction.
     if motion_in_flight.is_set():
         return
 
-    # Try to acquire the lock without blocking.
     if motion_lock.acquire(blocking=False):
         try:
             motion_in_flight.set()
@@ -40,23 +34,19 @@ def safe_move(ws_client: MoonrakerWSClient, z: float, speed: int):
                 {"script": f"G91 \n G0 Z{z} F{speed * 60} \n G90"}
             )
             
-            # Start a background thread to wait for completion and release the gate.
             release_thread = threading.Thread(target=wait_and_release, args=(ws_client,), daemon=True)
             release_thread.start()
-
         except Exception as e:
             print(f"Error during safe_move: {e}")
-            motion_in_flight.clear() # Clear the flag on error
+            motion_in_flight.clear()
         finally:
             motion_lock.release()
 
-def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, speed: int, timeout=5.0):
+def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, speed: int, timeout=15.0):
     """
-    A blocking, thread-safe function to move the Manta Z-axis.
-    It acquires the motion lock, sends the move, waits for completion, and releases the lock.
-    Ideal for sequential tasks like searching.
+    A blocking, thread-safe function to move the Manta Z-axis that raises
+    exceptions on failure.
     """
-    # Wait until the lock is available, then acquire it.
     with motion_lock:
         motion_in_flight.set()
         print(f"[MotionGate] Gate closed. Moving Z to {z} and waiting...")
@@ -65,11 +55,11 @@ def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, speed: int, timeo
                 "printer.gcode.script",
                 {"script": f"G90 \n G0 Z{z} F{speed * 60}"}
             )
-            # Block and wait right here.
             wait_for_complete(ws_client, timeout_s=timeout)
+            print("[MotionGate] Move complete. Gate is now open.")
         except Exception as e:
             print(f"Error during safe_move_and_wait: {e}")
+            # Re-raise the exception to be handled by the caller
+            raise
         finally:
-            # Release the gate so other threads can move.
             motion_in_flight.clear()
-            print("[MotionGate] Move complete. Gate is now open.")

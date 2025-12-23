@@ -1,8 +1,6 @@
 
 from Motion.Home import home_manta
-from Motion.Wait import wait_for_complete
-from Motion.Move import Move
-from Motion.Position import get_motor_positions
+from Motion.Move import safe_move_and_wait
 from Motion.Moonraker_ws import MoonrakerWSClient
 
 from Behavior.Search import SearchThread
@@ -32,8 +30,8 @@ def main():
         ws_client.connect()
 
         print("Homing Manta...")
+        # The new home_manta function is now blocking, so we don't need to wait separately.
         home_manta(ws_client)
-        wait_for_complete(ws_client)
         print("Homing complete. Entering SEARCH mode.")
 
         start_vision()
@@ -60,7 +58,7 @@ def main():
                     continue
 
                 if human:
-                    print("Target acquired → TRACK")
+                    print("Target acquired -> TRACK")
                     if search_thread:
                         search_thread.stop()
                         search_thread.join()
@@ -76,26 +74,15 @@ def main():
                 if not human:
                     lost_count += 1
                     if lost_count >= LOST_LIMIT:
-                        print("Target lost → SEARCH")
+                        print("Target lost -> SEARCH")
                         last_lost_time = time.time()
                         if track_thread:
                             track_thread.stop()
                             track_thread.join()
                             track_thread = None
                         
-                        try:
-                            pos = get_motor_positions(ws_client)
-                            if pos and 'z' in pos:
-                                current_z = float(pos['z'])
-                                rounded_z = round(current_z)
-                                diff_z = rounded_z - current_z
-                                
-                                if abs(diff_z) > 0.001:
-                                    print(f"Snapping to grid: {current_z:.3f} -> {rounded_z}. Moving by {diff_z:.3f}")
-                                    Move(ws_client, z=diff_z, speed=SEARCH_SPEED)
-                                    wait_for_complete(ws_client)
-                        except Exception as e:
-                            print(f"Error during grid snapping: {e}")
+                        # The "grid snapping" logic is no longer needed with the new search behavior
+                        # which moves to absolute positions.
                         
                         state = STATE_SEARCH
                         continue
@@ -120,6 +107,7 @@ def main():
         
         stop_vision()
         
+        # Wait for all threads to finish
         if user_input_thread and user_input_thread.is_alive():
             user_input_thread.join()
         if search_thread and search_thread.is_alive():
@@ -127,14 +115,11 @@ def main():
         if track_thread and track_thread.is_alive():
             track_thread.join()
 
-        if ws_client:
+        if ws_client and ws_client.is_connected():
             try:
                 print("Returning Z to home position...")
-                pos = get_motor_positions(ws_client)
-                if pos and 'z' in pos:
-                    current_z = float(pos['z'])
-                    Move(ws_client, z=-current_z, speed=1000)
-                    wait_for_complete(ws_client)
+                # Use the new safe, blocking move to go to Z=0
+                safe_move_and_wait(ws_client, z=0, speed=1000)
                 print("Z axis homed.")
             except Exception as e:
                 print(f"Could not home Z axis: {e}")

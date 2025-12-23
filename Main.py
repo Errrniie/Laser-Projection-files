@@ -73,12 +73,12 @@ def main():
                     current_z = track_state. current_z
                     state = STATE_SEARCH
                     continue
-
-            lost_count = 0
-            if center is not None:
-                cx, cy = center
-                if track_thread:
-                    track_thread.update_center(cx)
+            else:
+                lost_count = 0
+                if center is not None:
+                    cx, cy = center
+                    if track_thread:
+                        track_thread.update_center(cx)
         
         loop_time = time.time() - loop_start
         if loop_time > 0.05:  # Print if loop takes > 50ms

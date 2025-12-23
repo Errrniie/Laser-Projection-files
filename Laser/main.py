@@ -9,7 +9,7 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Imports from our project
-from YoloModel import YoloInterface as Vision
+from Distance import YoloInterface as Vision
 from Distance.Model import load_model, get_distance
 from Laser.LaserController import aim_at_coordinates
 from Laser.LaserEnable import Controller as LaserEnableController

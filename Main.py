@@ -61,7 +61,6 @@ def main():
                     print("Target acquired -> TRACK")
                     if search_thread:
                         search_thread.stop()
-                        search_thread.join()
                         search_thread = None
                     
                     reset_tracking()
@@ -78,7 +77,6 @@ def main():
                         last_lost_time = time.time()
                         if track_thread:
                             track_thread.stop()
-                            track_thread.join()
                             track_thread = None
                         
                         # The "grid snapping" logic is no longer needed with the new search behavior

@@ -1,89 +1,80 @@
 import threading
 from Motion.Move import Move
-from Motion.Wait import wait_for_complete
-from Motion.Limits import Limits
 from Motion.Position import get_motor_positions
+import time
 
-# ---------------- CONFIG ----------------
-GAIN_MM_PER_PX = 0.0030
-DEADZONE_PX = 15
-MAX_STEP_MM = 1.0
-TRACK_SPEED = 800
-# ---------------------------------------
-
+# --- Tracking State ---
 class _TrackState:
     def __init__(self):
-        self.error_history = []
+        self.last_error = 0
+        self.integral = 0
+        self.last_move_time = 0
 
 _state = _TrackState()
 
-def reset_tracking():
-    """Call once when entering TRACK mode."""
-    _state.error_history.clear()
+def reset_tracking(z_start=None):
+    """Resets the PID controller and tracking state."""
+    _state.last_error = 0
+    _state.integral = 0
+    _state.last_move_time = 0
+    print("Tracking state has been reset.")
+
+# --- PID Controller ---
+Kp = 0.014
+Ki = 0.003
+Kd = 0.005
+
+MIN_MOVE_INTERVAL = 0.05  # 50ms
+TRACKING_SPEED = 1200
 
 def track(cx, frame_width):
-    state = _state
+    """
+    Calculates the required motor movement to keep the target centered.
+    This function should be called repeatedly with the latest center position.
+    """
+    current_time = time.time()
+    if current_time - _state.last_move_time < MIN_MOVE_INTERVAL:
+        return  # Don't move too frequently
 
-    # --- Smooth error ---
-    state.error_history.append(cx)
-    if len(state.error_history) > 3:
-        state.error_history.pop(0)
+    center_x = frame_width / 2
+    error = cx - center_x
 
-    smoothed_cx = sum(state.error_history) / len(state.error_history)
-
-    center_x = frame_width / 2.0
-    error_px = smoothed_cx - center_x
-
-    # --- Deadzone ---
-    if abs(error_px) < DEADZONE_PX:
+    # --- Deadzone: Ignore small errors ---
+    if abs(error) < 15:
         return
 
-    # --- Get current position ---
-    try:
-        pos = get_motor_positions()
-        if not pos or 'z' not in pos:
-            print("Could not get current Z position.")
-            return
-        current_z = float(pos['z'])
-    except Exception as e:
-        print(f"Error getting motor positions: {e}")
-        return
+    _state.integral += error
+    derivative = error - _state.last_error
 
-    # --- Compute relative Z correction ---
-    dz = error_px * GAIN_MM_PER_PX
+    # PID calculation
+    output = Kp * error + Ki * _state.integral + Kd * derivative
 
-    # Clamp step
-    if dz > 0:
-        dz = min(MAX_STEP_MM, dz)
-    else:
-        dz = max(-MAX_STEP_MM, dz)
+    _state.last_error = error
 
-    # Clamp against limits
-    if current_z + dz > Limits.Z_MAX:
-        dz = Limits.Z_MAX - current_z
-    elif current_z + dz < Limits.Z_MIN:
-        dz = Limits.Z_MIN - current_z
+    # Clamp the output to a reasonable range
+    dz = max(-1.0, min(1.0, output))
 
-    if abs(dz) < 0.001:  # No significant move
-        return
+    # Move the motor
+    Move(z=dz, speed=TRACKING_SPEED)
+    _state.last_move_time = current_time
 
-    # --- Deterministic motion ---
-    Move(z=dz, speed=TRACK_SPEED)
-    wait_for_complete()
-
+# --- Tracking Thread ---
 class TrackThread(threading.Thread):
     def __init__(self, cx, frame_width, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.daemon = True
-        self.cx = cx
         self.frame_width = frame_width
         self._stop_event = threading.Event()
+        # Immediately perform the first track operation on creation
+        self.update_center(cx)
 
     def run(self):
-        """Main loop for the tracking thread."""
+        """
+        The tracking thread now does nothing in its main loop.
+        The tracking logic is now driven by the main thread calling update_center.
+        """
         print("Track thread started.")
-        while not self._stop_event.is_set():
-            track(self.cx, self.frame_width)
+        self._stop_event.wait()  # Stay alive until stop is called
         print("Track thread stopped.")
 
     def stop(self):
@@ -91,4 +82,9 @@ class TrackThread(threading.Thread):
         self._stop_event.set()
 
     def update_center(self, cx):
-        self.cx = cx
+        """
+        This method is called from the main thread with new coordinates.
+        It contains the call to the tracking logic.
+        """
+        if not self._stop_event.is_set():
+            track(cx, self.frame_width)

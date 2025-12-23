@@ -62,7 +62,7 @@ def main():
         elif state == STATE_TRACK:
             if not human:
                 lost_count += 1
-                if lost_count >= LOST_LIMIT:
+                if lost_count >= LOST_LIMIT: 
                     print("Target lost → SEARCH")
                     if track_thread:
                         track_thread.stop()
@@ -71,7 +71,7 @@ def main():
                     # Pass the last known Z from tracking to the main loop's Z
                     current_z = track_state.current_z
                     state = STATE_SEARCH
-                continue
+                    continue
 
             lost_count = 0
             cx, cy = center

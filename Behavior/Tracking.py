@@ -2,6 +2,7 @@ import threading
 from Motion.Move import Move
 from Motion.Wait import wait_for_complete
 from Motion.Limits import Limits
+from Position import get_motor_positions
 
 # ---------------- CONFIG ----------------
 GAIN_MM_PER_PX = 0.0030
@@ -12,19 +13,13 @@ TRACK_SPEED = 800
 
 class _TrackState:
     def __init__(self):
-        self.current_z = 10.0
         self.error_history = []
-
 
 _state = _TrackState()
 
-
-def reset_tracking(z_start=None):
+def reset_tracking():
     """Call once when entering TRACK mode."""
     _state.error_history.clear()
-    if z_start is not None:
-        _state.current_z = z_start
-
 
 def track(cx, frame_width):
     state = _state
@@ -43,6 +38,17 @@ def track(cx, frame_width):
     if abs(error_px) < DEADZONE_PX:
         return
 
+    # --- Get current position ---
+    try:
+        pos = get_motor_positions()
+        if not pos or 'z' not in pos:
+            print("Could not get current Z position.")
+            return
+        current_z = pos['z']
+    except Exception as e:
+        print(f"Error getting motor positions: {e}")
+        return
+
     # --- Compute relative Z correction ---
     dz = error_px * GAIN_MM_PER_PX
 
@@ -53,21 +59,17 @@ def track(cx, frame_width):
         dz = max(-MAX_STEP_MM, dz)
 
     # Clamp against limits
-    if state.current_z + dz > Limits.Z_MAX:
-        dz = Limits.Z_MAX - state.current_z
-    elif state.current_z + dz < Limits.Z_MIN:
-        dz = Limits.Z_MIN - state.current_z
+    if current_z + dz > Limits.Z_MAX:
+        dz = Limits.Z_MAX - current_z
+    elif current_z + dz < Limits.Z_MIN:
+        dz = Limits.Z_MIN - current_z
 
-    if dz == 0:
+    if abs(dz) < 0.001:  # No significant move
         return
 
     # --- Deterministic motion ---
     Move(z=dz, speed=TRACK_SPEED)
     wait_for_complete()
-
-    # --- Update mechanical truth ---
-    state.current_z += dz
-
 
 class TrackThread(threading.Thread):
     def __init__(self, cx, frame_width, *args, **kwargs):

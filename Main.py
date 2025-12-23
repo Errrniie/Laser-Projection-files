@@ -15,7 +15,7 @@ FRAME_WIDTH = 640
 STATE_SEARCH = "SEARCH"
 STATE_TRACK  = "TRACK"
 
-LOST_LIMIT = 8
+LOST_LIMIT = 30
 
 def main():
     init_ws()

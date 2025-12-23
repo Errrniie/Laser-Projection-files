@@ -18,7 +18,7 @@ _stop_event = threading.Event()
 
 # --- Constants ---
 _WINDOW_NAME = "Goose Vision"
-_VISION_LOOP_INTERVAL = 0.1  # Process frames at 10Hz
+_VISION_LOOP_INTERVAL = 0.05  # Process frames at 10Hz
 
 def start_vision():
     """Initializes and starts all vision-related threads."""

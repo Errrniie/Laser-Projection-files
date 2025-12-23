@@ -1,5 +1,8 @@
 import websocket, json
 import threading
+from __future__ import annotations
+
+from Motion.Moonraker_ws import MoonrakerWSClient
 
 MOONRAKER_WS = "ws://192.168.8.127:7125/websocket"
 
@@ -16,10 +19,17 @@ def init_ws():
         "id": 1
     }))
 
-def wait_for_complete():
-    while True:
-        msg = json.loads(_ws.recv())
-        if msg.get("method") == "notify_gcode_response":
-            if msg["params"][0].strip() == "// complete":
-                return
+def wait_for_complete(ws_client: MoonrakerWSClient, timeout_s: float = 10.0) -> None:
+    """
+    Blocks until all queued moves complete.
+    Uses M400 (wait for moves to finish).
+    """
+    resp = ws_client.call(
+        "printer.gcode.script",
+        {"script": "M400"},
+        timeout_s=timeout_s
+    )
+    # Moonraker responses are JSON-RPC: {"result": ...} or {"error": ...}
+    if "error" in resp:
+        raise RuntimeError(resp["error"])
 

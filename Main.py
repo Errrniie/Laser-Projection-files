@@ -3,19 +3,26 @@ from Motion.Home import home_manta
 from Motion.Wait import wait_for_complete, init_ws
 from Motion.Move import Move
 from Motion.Position import get_motor_positions
+from Motion.Moonraker_ws import MoonrakerWSClient
 
 from Behavior.Search import SearchThread
 from Behavior.Tracking import TrackThread, reset_tracking
 from Behavior.UserInput import UserInputThread, should_quit
+
 import time
 
 from YoloModel.YoloInterface import show_frame, detect_human_live, start_vision, stop_vision
 
+MOONRAKER_HOST = "192.168.8.146"
+WS_URL = f"ws://{MOONRAKER_HOST}/websocket" 
 FRAME_WIDTH = 640
 STATE_SEARCH = "SEARCH"
 STATE_TRACK = "TRACK"
-LOST_LIMIT = 15
+LOST_LIMIT = 30
 SEARCH_SPEED = 400
+
+ws_client = MoonrakerWSClient(WS_URL)
+ws_client.connect()
 
 def main():
     init_ws()

@@ -3,6 +3,8 @@ from Motion.Move import Move
 from Motion.Wait import wait_for_complete
 from Motion.Limits import Limits
 from Motion.Position import get_motor_positions
+from Motion.Moonraker_ws import MoonrakerWSClient
+
 
 class _PanState:
     def __init__(self):

@@ -1,56 +1,54 @@
 import numpy as np
-from numpy.polynomial.polynomial import Polynomial
 
 # --- Globals ---
-_model = None
-_inverse_model = None
+# For get_distance(y): y must be increasing for np.interp
+_interp_y = None
+_interp_dist_from_y = None
+
+# For get_y(distance): distance must be increasing for np.interp
+_interp_dist = None
+_interp_y_from_dist = None
 
 def load_model(calibration_data):
     """
     Loads the distance model from calibration data.
-    The model is a polynomial fit to the (y, distance) data.
+    The model uses linear interpolation between the calibrated points, which is more robust
+    than a polynomial fit for this type of data.
     """
-    global _model, _inverse_model
+    global _interp_y, _interp_dist_from_y, _interp_dist, _interp_y_from_dist
     
-    if not calibration_data:
-        raise ValueError("Calibration data cannot be empty.")
+    if not calibration_data or len(calibration_data) < 2:
+        raise ValueError("Calibration data must contain at least two points for interpolation.")
 
-    # Sort by distance to ensure correct interpolation
-    calibration_data.sort(key=lambda p: p[1])
+    # --- Prepare for get_y(distance) ---
+    # Sort by distance (ascending), which is the required order for np.interp's x-array.
+    cal_sorted_by_dist = sorted(calibration_data, key=lambda p: p[1])
+    _interp_dist = np.array([p[1] for p in cal_sorted_by_dist])
+    _interp_y_from_dist = np.array([p[0] for p in cal_sorted_by_dist])
 
-    y_coords = np.array([p[0] for p in calibration_data])
-    distances = np.array([p[1] for p in calibration_data])
-
-    # --- Create a polynomial model (y) -> distance ---
-    # Fit a 2nd degree polynomial: distance = ay^2 + by + c
-    _model = Polynomial.fit(y_coords, distances, 2)
-
-    # --- Create an inverse model distance -> (y) ---
-    _inverse_model = Polynomial.fit(distances, y_coords, 2)
-
-    print("Distance model loaded.")
+    # --- Prepare for get_distance(y) ---
+    # Sort by y-coordinate (ascending) for the other interpolation direction.
+    cal_sorted_by_y = sorted(calibration_data, key=lambda p: p[0])
+    _interp_y = np.array([p[0] for p in cal_sorted_by_y])
+    _interp_dist_from_y = np.array([p[1] for p in cal_sorted_by_y])
+    
+    print("Distance model loaded using linear interpolation.")
 
 def get_distance(y):
     """
-    Get the estimated distance for a given y-coordinate.
+    Get the estimated distance for a given y-coordinate using linear interpolation.
+    np.interp handles extrapolation linearly beyond the calibrated range.
     """
-    if _model is None:
+    if _interp_y is None:
         raise RuntimeError("Distance model not loaded. Call load_model() first.")
     
-    # Clip the y-coordinate to the calibrated range to avoid extrapolation errors
-    min_y, max_y = _model.domain
-    clipped_y = np.clip(y, min_y, max_y)
-
-    return _model(clipped_y)
+    return np.interp(y, _interp_y, _interp_dist_from_y)
 
 def get_y(distance):
     """
-    Get the estimated y-coordinate for a given distance.
+    Get the estimated y-coordinate for a given distance using linear interpolation.
     """
-    if _inverse_model is None:
+    if _interp_dist is None:
         raise RuntimeError("Distance model not loaded. Call load_model() first.")
     
-    min_dist, max_dist = _inverse_model.domain
-    clipped_dist = np.clip(distance, min_dist, max_dist)
-    
-    return _inverse_model(clipped_dist)
+    return np.interp(distance, _interp_dist, _interp_y_from_dist)

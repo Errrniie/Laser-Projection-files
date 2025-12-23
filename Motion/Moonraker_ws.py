@@ -9,6 +9,8 @@ from typing import Any, Callable, Dict, Optional
 
 import websocket  # websocket-client
 
+# --- Constants ---
+RECONNECT_INTERVAL_S = 3.0
 
 @dataclass
 class _Pending:
@@ -19,9 +21,8 @@ class _Pending:
 
 class MoonrakerWSClient:
     """
-    Single websocket connection + single reader thread.
-    Thread-safe call() for JSON-RPC requests.
-    Optional notification handlers for "method" messages.
+    Manages a WebSocket connection to Moonraker, handling JSON-RPC requests,
+    notifications, and automatic reconnection. It is thread-safe.
     """
 
     def __init__(self, ws_url: str, recv_timeout_s: float = 0.25):
@@ -38,24 +39,50 @@ class MoonrakerWSClient:
         self._next_id = 1
 
         self._notif_handlers: Dict[str, Callable[[dict], None]] = {}
+        
+        self._connection_lock = threading.Lock()
+        self._last_connect_attempt = 0
 
     def connect(self) -> None:
-        if self._ws is not None:
-            return
+        """
+        Establishes the WebSocket connection if not already connected.
+        This method is thread-safe and rate-limited.
+        """
+        with self._connection_lock:
+            if self.is_connected():
+                return
+            
+            # Rate-limit connection attempts
+            if time.time() - self._last_connect_attempt < RECONNECT_INTERVAL_S:
+                return
 
-        self._stop.clear()
-        self._ws = websocket.create_connection(self.ws_url, timeout=5)
-        self._ws.settimeout(self.recv_timeout_s)
+            self._last_connect_attempt = time.time()
+            self.close() # Ensure everything is clean before starting
+            self._stop.clear()
 
-        self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
-        self._rx_thread.start() 
+            try:
+                print("Connecting to Moonraker...")
+                self._ws = websocket.create_connection(self.ws_url, timeout=5)
+                self._ws.settimeout(self.recv_timeout_s)
+                
+                self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
+                self._rx_thread.start()
+                print("Moonraker connection established.")
+            except (websocket.WebSocketException, ConnectionRefusedError, OSError) as e:
+                print(f"Failed to connect to Moonraker: {e}")
+                self._ws = None # Ensure ws is None on failure
 
     def is_connected(self) -> bool:
-        return self._ws is not None
+        """Checks if the WebSocket is connected and the reader thread is active."""
+        return self._ws is not None and self._rx_thread is not None and self._rx_thread.is_alive()
 
     def close(self) -> None:
+        """Closes the WebSocket connection and cleans up resources."""
+        if self._stop.is_set():
+            return # Already closing/closed
+        
         self._stop.set()
-
+        
         ws = self._ws
         self._ws = None
 
@@ -64,8 +91,11 @@ class MoonrakerWSClient:
                 ws.close()
             except Exception:
                 pass
+        
+        if self._rx_thread and threading.current_thread() != self._rx_thread:
+            self._rx_thread.join(timeout=2.0)
 
-        # fail any waiters
+        # Fail any pending requests
         with self._pending_lock:
             for p in self._pending.values():
                 p.err = RuntimeError("WebSocket closed")
@@ -73,13 +103,18 @@ class MoonrakerWSClient:
             self._pending.clear()
 
     def on_notify(self, method: str, handler: Callable[[dict], None]) -> None:
-        """Register handler for notifications with a given method name."""
+        """Register a handler for notifications with a given method name."""
         self._notif_handlers[method] = handler
 
     def call(self, method: str, params: Optional[dict] = None, timeout_s: float = 2.0) -> dict:
-        """JSON-RPC call. Returns the full response dict."""
-        if self._ws is None:
-            raise RuntimeError("WebSocket not connected")
+        """
+        Sends a JSON-RPC request and waits for a response.
+        Handles reconnection if the connection is down.
+        """
+        if not self.is_connected():
+            self.connect()
+            if not self.is_connected():
+                raise RuntimeError("WebSocket not connected")
 
         req_id = self._alloc_id()
         msg = {"jsonrpc": "2.0", "id": req_id, "method": method}
@@ -94,10 +129,15 @@ class MoonrakerWSClient:
 
         try:
             with self._send_lock:
-                self._ws.send(payload)
-        except Exception as e:
+                if self._ws:
+                    self._ws.send(payload)
+                else:
+                    raise websocket.WebSocketConnectionClosedException("WebSocket is None")
+        except (websocket.WebSocketConnectionClosedException, AttributeError) as e:
+            # Connection dropped, pop pending and raise
             self._pop_pending(req_id, err=e)
-            raise
+            self.close() # Trigger a clean close and allow reconnection on next call
+            raise RuntimeError("WebSocket not connected") from e
 
         if not pending.event.wait(timeout_s):
             self._pop_pending(req_id, err=TimeoutError(f"Timeout waiting for {method}"))
@@ -105,6 +145,7 @@ class MoonrakerWSClient:
 
         if pending.err:
             raise pending.err
+        
         assert pending.resp is not None
         return pending.resp
 
@@ -123,10 +164,11 @@ class MoonrakerWSClient:
             p.event.set()
 
     def _rx_loop(self) -> None:
+        """The main loop for the reader thread."""
         while not self._stop.is_set():
             ws = self._ws
             if ws is None:
-                break
+                break # Exit if connection is gone
 
             try:
                 raw = ws.recv()
@@ -134,17 +176,19 @@ class MoonrakerWSClient:
                     continue
             except websocket.WebSocketTimeoutException:
                 continue
-            except websocket.WebSocketConnectionClosedException as e:
-                self.close()
+            except websocket.WebSocketConnectionClosedException:
+                print("Moonraker connection closed.")
+                self.close() # Trigger full cleanup
                 return
-            except Exception as e:
-                # conservative: close so callers fail fast instead of hanging
+            except Exception:
+                # Be conservative: close so callers fail fast instead of hanging
+                print("Error in WebSocket receive loop.")
                 self.close()
                 return
 
             try:
                 msg = json.loads(raw)
-            except Exception:
+            except json.JSONDecodeError:
                 continue
 
             # Response to a request
@@ -161,4 +205,4 @@ class MoonrakerWSClient:
                     try:
                         handler(msg)
                     except Exception:
-                        pass
+                        pass # Ignore errors in notification handlers

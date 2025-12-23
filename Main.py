@@ -22,26 +22,29 @@ LOST_LIMIT = 30
 SEARCH_SPEED = 400
 
 def main():
-    ws_client = MoonrakerWSClient(WS_URL)
-    ws_client.connect()
-
-    print("Homing Manta...")
-    home_manta(ws_client)
-    wait_for_complete(ws_client)
-    print("Homing complete. Entering SEARCH mode.")
-
-    start_vision()
-    
-    user_input_thread = UserInputThread()
-    user_input_thread.start()
-
-    state = STATE_SEARCH
-    lost_count = 0
+    ws_client = None
+    user_input_thread = None
     search_thread = None
     track_thread = None
-    last_lost_time = 0
 
     try:
+        ws_client = MoonrakerWSClient(WS_URL)
+        ws_client.connect()
+
+        print("Homing Manta...")
+        home_manta(ws_client)
+        wait_for_complete(ws_client)
+        print("Homing complete. Entering SEARCH mode.")
+
+        start_vision()
+        
+        user_input_thread = UserInputThread()
+        user_input_thread.start()
+
+        state = STATE_SEARCH
+        lost_count = 0
+        last_lost_time = 0
+
         while not should_quit():
             human, center, bbox, conf, frame = detect_human_live()
 
@@ -103,8 +106,9 @@ def main():
             
             time.sleep(0.01)
 
-    except KeyboardInterrupt:
-        print("Program interrupted by user.")
+    except (KeyboardInterrupt, Exception) as e:
+        print(f"An error occurred: {e}")
+
     finally:
         print("Shutdown requested...")
         if user_input_thread:
@@ -113,6 +117,7 @@ def main():
             search_thread.stop()
         if track_thread:
             track_thread.stop()
+        
         stop_vision()
         
         if user_input_thread and user_input_thread.is_alive():
@@ -122,18 +127,20 @@ def main():
         if track_thread and track_thread.is_alive():
             track_thread.join()
 
-        try:
-            print("Returning Z to home position...")
-            pos = get_motor_positions(ws_client)
-            if pos and 'z' in pos:
-                current_z = float(pos['z'])
-                Move(ws_client, z=-current_z, speed=1000)
-                wait_for_complete(ws_client)
-            print("Z axis homed.")
-        except Exception as e:
-            print(f"Could not home Z axis: {e}")
-        
-        ws_client.close()
+        if ws_client:
+            try:
+                print("Returning Z to home position...")
+                pos = get_motor_positions(ws_client)
+                if pos and 'z' in pos:
+                    current_z = float(pos['z'])
+                    Move(ws_client, z=-current_z, speed=1000)
+                    wait_for_complete(ws_client)
+                print("Z axis homed.")
+            except Exception as e:
+                print(f"Could not home Z axis: {e}")
+            finally:
+                ws_client.close()
+
         print("Shutdown complete.")
 
 if __name__ == "__main__":

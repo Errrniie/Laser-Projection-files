@@ -23,7 +23,9 @@ def get_motor_positions(ws_client: MoonrakerWSClient, decimal_places: int = 3) -
         toolhead = response["result"]["status"]["toolhead"]
         
         # Get raw positions
-        x_raw, y_raw, z_raw = toolhead["position"]
+        x_raw = toolhead["position"][0]
+        y_raw = toolhead["position"][1]
+        z_raw = toolhead["position"][2]
         
         # Format positions
         fmt_string = f"{{:.{decimal_places}f}}"

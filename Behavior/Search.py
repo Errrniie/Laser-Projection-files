@@ -1,18 +1,13 @@
 import threading
 import time
-from Motion.Move import safe_move, safe_move_and_wait
+from Motion.Move import safe_move_and_wait
+from Motion.Position import get_motor_positions
 from Motion.Moonraker_ws import MoonrakerWSClient
-import Motion.Limits as Limits
-# --- Search Constants ---
-SEARCH_EXTENT_MM = 15  # How far to move left/right from center in mm
-SEARCH_SPEED = 500       # Speed for search movements
-LOOP_INTERVAL = 0.1      # Seconds to wait between initiating search moves
 
-SEARCH_MIN = -20
-SEARCH_MAX = 20
-SEARCH_STEP = 1
-SEARCH_SPEED = 400
-SEARCH_DWELL_S = 0.12 
+# --- Search Constants ---
+SEARCH_EXTENT_MM = 10  # How far to move from the last known position
+SEARCH_SPEED = 50
+LOOP_INTERVAL = 0.1
 
 class SearchThread(threading.Thread):
     def __init__(self, ws_client: MoonrakerWSClient, *args, **kwargs):
@@ -20,43 +15,51 @@ class SearchThread(threading.Thread):
         self.daemon = True
         self._stop_event = threading.Event()
         self._ws_client = ws_client
-        self._search_direction = 1 # 1 for positive, -1 for negative
-        self._first_step = True
-
 
     def run(self):
+        """
+        Main searching loop.
+        Scans locally around the last known Z position.
+        """
         print("Search thread started.")
-        z = SEARCH_MIN
-        direction = 1
+        
+        # Get the Z position where the target was lost
+        try:
+            pos = get_motor_positions(self._ws_client)
+            if pos is None:
+                raise RuntimeError("Could not get current position to start search.")
+            start_z = pos['z_raw']
+            print(f"Starting local search around Z={start_z:.2f}mm")
+        except Exception as e:
+            print(f"Error starting search: {e}. Aborting search thread.")
+            return
 
-        while not self._stop_event.is_set():
-            if self._first_step:
-    # First move after TRACK → SEARCH: do NOT block
-                safe_move(self._ws_client, z=z, speed=SEARCH_SPEED)
-                self._first_step = False
-            else:
-                # Normal serialized search steps
-                safe_move_and_wait(self._ws_client, z=z, speed=SEARCH_SPEED)
+        # The search pattern will be: start -> start-extent -> start+extent -> start
+        search_points = [
+            start_z - SEARCH_EXTENT_MM,
+            start_z + SEARCH_EXTENT_MM,
+            start_z
+        ]
 
-
-            # Give vision time to see
-            time.sleep(SEARCH_DWELL_S)
-
+        for target_z in search_points:
+            # If a stop is requested during the search sequence, exit immediately.
             if self._stop_event.is_set():
+                print("Search cancelled.")
                 break
+            
+            try:
+                print(f"Searching... moving to Z={target_z:.2f}")
+                safe_move_and_wait(self._ws_client, z=target_z, speed=SEARCH_SPEED)
+            except Exception as e:
+                print(f"Error in search loop: {e}. Stopping search.")
+                self._stop_event.set()
+                break # Exit the loop on error
 
-            # Increment scan position
-            z += direction * SEARCH_STEP
-
-            # Reverse direction at bounds
-            if z >= SEARCH_MAX:
-                z = SEARCH_MAX
-                direction = -1
-            elif z <= SEARCH_MIN:
-                z = SEARCH_MIN
-                direction = 1
-
-    print("Search thread stopped.")
+        # If the loop completes without being stopped, it means the target was not found.
+        if not self._stop_event.is_set():
+            print("Local search finished, target not re-acquired.")
+        
+        print("Search thread stopped.")
 
     def stop(self):
         """Signals the thread to stop."""

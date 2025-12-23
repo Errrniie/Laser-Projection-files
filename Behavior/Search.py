@@ -1,11 +1,9 @@
 import threading
 import time
 from Motion.Move import safe_move_and_wait
-from Motion.Position import get_motor_positions
 from Motion.Moonraker_ws import MoonrakerWSClient
 
 # --- Search Constants ---
-SEARCH_EXTENT_MM = 10  # How far to move from the last known position
 SEARCH_SPEED = 50
 LOOP_INTERVAL = 0.1
 
@@ -19,47 +17,35 @@ class SearchThread(threading.Thread):
     def run(self):
         """
         Main searching loop.
-        Scans locally around the last known Z position.
+        Scans in a fixed absolute pattern: 10 -> 20 -> 0 -> 20 -> 0 ...
         """
         print("Search thread started.")
-        
-        # Get the Z position where the target was lost
+
+        # Define the repeating search pattern
+        search_points = [20, 0]
+
         try:
-            pos = get_motor_positions(self._ws_client)
-            if pos is None:
-                raise RuntimeError("Could not get current position to start search.")
-            start_z = pos['z_raw']
-            print(f"Starting local search around Z={start_z:.2f}mm")
+            # 1. Initial move to the starting position
+            print("Moving to search start position Z=10...")
+            safe_move_and_wait(self._ws_client, z=10, speed=SEARCH_SPEED)
+
+            # 2. Loop the search pattern until stopped
+            while not self._stop_event.is_set():
+                for target_z in search_points:
+                    if self._stop_event.is_set():
+                        break
+                    
+                    print(f"Searching... moving to Z={target_z}")
+                    safe_move_and_wait(self._ws_client, z=target_z, speed=SEARCH_SPEED)
+                    
+                    # A short pause between moves
+                    time.sleep(LOOP_INTERVAL)
+
         except Exception as e:
-            print(f"Error starting search: {e}. Aborting search thread.")
-            return
-
-        # The search pattern will be: start -> start-extent -> start+extent -> start
-        search_points = [
-            start_z - SEARCH_EXTENT_MM,
-            start_z + SEARCH_EXTENT_MM,
-            start_z
-        ]
-
-        for target_z in search_points:
-            # If a stop is requested during the search sequence, exit immediately.
-            if self._stop_event.is_set():
-                print("Search cancelled.")
-                break
-            
-            try:
-                print(f"Searching... moving to Z={target_z:.2f}")
-                safe_move_and_wait(self._ws_client, z=target_z, speed=SEARCH_SPEED)
-            except Exception as e:
-                print(f"Error in search loop: {e}. Stopping search.")
-                self._stop_event.set()
-                break # Exit the loop on error
-
-        # If the loop completes without being stopped, it means the target was not found.
-        if not self._stop_event.is_set():
-            print("Local search finished, target not re-acquired.")
-        
-        print("Search thread stopped.")
+            print(f"Error in search loop: {e}. Stopping search.")
+        finally:
+            self._stop_event.set() # Ensure the thread stops on exit/error
+            print("Search thread stopped.")
 
     def stop(self):
         """Signals the thread to stop."""

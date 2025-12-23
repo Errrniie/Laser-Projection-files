@@ -18,6 +18,7 @@ _stop_event = threading.Event()
 
 # --- Constants ---
 _WINDOW_NAME = "Goose Vision"
+_VISION_LOOP_INTERVAL = 0.1  # Process frames at 10Hz
 
 def start_vision():
     """Initializes and starts all vision-related threads."""
@@ -64,22 +65,30 @@ def stop_vision():
 
 def _vision_worker():
     """
-    Dedicated thread for running object detection.
-    Gets frames from the camera and puts results into a queue.
+    Dedicated thread for running object detection at a controlled rate.
     """
     while not _stop_event.is_set():
+        loop_start_time = time.time()
+
         frame = camera.get_frame()
         if frame is None:
             time.sleep(0.01)
             continue
         
+        # --- This is the expensive operation ---
         human, center, bbox, conf = detect_human(frame)
         
         try:
             # Put the full results packet into the queue
             _vision_queue.put_nowait((human, center, bbox, conf, frame))
         except queue.Full:
-            pass # Discard old frame if main loop is slow
+            pass # Discard if the main loop is not keeping up
+
+        # --- Rate-limit the loop to free up CPU ---
+        elapsed_time = time.time() - loop_start_time
+        sleep_time = _VISION_LOOP_INTERVAL - elapsed_time
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
 def _display_worker():
     """Separate thread handles all visualization"""

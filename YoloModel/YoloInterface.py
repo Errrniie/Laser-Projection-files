@@ -64,14 +64,6 @@ def detect_human_live():
     if frame is None:
         return False, None, None, 0.0, None
 
-    current_time = time.time()
-    if not hasattr(detect_human_live, '_last_time'):
-        detect_human_live._last_time = current_time
-    else:
-        fps = 1.0 / (current_time - detect_human_live._last_time)
-        print(f"Vision FPS: {fps:.1f}")
-        detect_human_live._last_time = current_time
-
     human, center, bbox, conf = detect_human(frame)
     return human, center, bbox, conf, frame
 

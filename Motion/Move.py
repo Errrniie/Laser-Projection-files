@@ -16,10 +16,11 @@ def wait_and_release(ws_client: MoonrakerWSClient, timeout=2.0):
         motion_in_flight.clear()
         print("[MotionGate] Move complete. Gate is now open.")
 
-def safe_move(ws_client: MoonrakerWSClient, z: float, speed: int):
+def safe_move(ws_client: MoonrakerWSClient, z: float, x: float, y: float, speed: int):
     """
     A non-blocking, thread-safe function to move the Manta Z-axis.
-    It respects the motion gate and is ideal for real-time tracking.
+    It respects the motion gate and is ideal for real-time def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, x: float, y float, speed: int, timeout=15.0):
+tracking.
     """
     if motion_in_flight.is_set():
         return
@@ -42,7 +43,7 @@ def safe_move(ws_client: MoonrakerWSClient, z: float, speed: int):
         finally:
             motion_lock.release()
 
-def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, speed: int, timeout=15.0):
+def safe_move_and_wait(ws_client: MoonrakerWSClient, z: float, x: float, y: float, speed: int, timeout=15.0):
     """
     A blocking, thread-safe function to move the Manta Z-axis that raises
     exceptions on failure.

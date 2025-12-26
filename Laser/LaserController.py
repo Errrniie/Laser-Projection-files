@@ -9,4 +9,4 @@ def aim_at_coordinates(ws_client, x_m: float, z_m: float, speed: int = 600):
     x_target, y_target = solve_ground_hit(x_m, z_m)
     
     # The motion system uses X and Y for the laser galvanometers
-    safe_move_and_wait(ws_client, x=x_target, y=y_target, speed=speed)
+    safe_move_and_wait(ws_client, z=None, x=x_target, y=y_target, speed=speed)

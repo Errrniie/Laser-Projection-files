@@ -50,7 +50,7 @@ class MoonrakerWSClient:
         """
         with self._connection_lock:
             if self.is_connected():
-                return
+                                           return
             
             # Rate-limit connection attempts
             if time.time() - self._last_connect_attempt < RECONNECT_INTERVAL_S:

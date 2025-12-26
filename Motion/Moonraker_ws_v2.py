@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional, Mapping
 from dataclasses import dataclass
 import websocket
 
+
 # MoonrakerWSClient: the only public class.
 class MoonrakerWSClient:
     """Pure Moonraker WebSocket client: safe, boring, thread-safe, and responsibility-limited."""
@@ -50,7 +51,18 @@ class MoonrakerWSClient:
 
         # Subscribe to printer status objects -- allowed to stub
         try:
-            self.call("printer.objects.subscribe", {"objects": ["print_stats", "toolhead", "virtual_sdcard", "idle_timeout", "display_status"]})
+            self.call(
+                "printer.objects.subscribe",
+                {
+                    "objects": {
+                        "print_stats": None,
+                        "toolhead": None,
+                        "virtual_sdcard": None,
+                        "idle_timeout": None,
+                        "display_status": None,
+                    }
+                }
+            )
         except Exception:
             # Subscriptions are best-effort and stubbed (do not block connect)
             pass
@@ -149,13 +161,30 @@ class MoonrakerWSClient:
             raise RuntimeError("Failed to send gcode") from e
 
     # -- Printer state mirroring
+    @property
+    def is_idle(self) -> Optional[bool]:
+        with self._cache_lock:
+            ps = self._printer_state.get("print_stats")
+
+        if not isinstance(ps, dict):
+            return None
+
+        state = ps.get("state")
+        if not isinstance(state, str):
+           return None
+
+        state = state.lower()
+
+        if state in ("standby", "ready", "complete"):
+            return True
+        if state in ("printing", "paused"):
+            return False
+
+        return None
+
 
     def _update_printer_state(self, notification: dict) -> None:
-        """
-        Mirror Moonraker printer state exactly as received.
-        No interpretation, no inference, no control logic.
-        """
-        params = notification.get("params") or []
+        params = notification.get("params")
         if not params or not isinstance(params[0], dict):
             return
 
@@ -175,6 +204,11 @@ class MoonrakerWSClient:
         with self._cache_lock:
             return dict(self._printer_state)
 
+    @property
+    def printer_status_time(self) -> Optional[float]:
+        with self._cache_lock:
+            return self._printer_status_time
+        
     # -- Notification handlers
 
     def on_notify(self, method: str, handler: Callable[[dict], None]) -> None:
@@ -230,6 +264,9 @@ class MoonrakerWSClient:
                 p.finish(error=RuntimeError("WebSocket receive loop terminated"))
             self._pending.clear()
         self._ws = None
+        if method == "notify_status_update":
+            print("STATUS UPDATE:", msg)
+
 
 # -- Internal support dataclasses --
 
@@ -245,3 +282,4 @@ class _PendingRequest:
         self.response = response
         self.error = error
         self.event.set()
+

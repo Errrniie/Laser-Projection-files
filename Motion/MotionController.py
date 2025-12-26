@@ -46,7 +46,7 @@ class MotionController:
             if z is not None:
                 self._intent["z"] = z
 
-    def go_intent(self) -> None:
+    def set_neutral_intent(self) -> None:
         """Set intent to neutral pose (does not block, does not emit)."""
         with self._lock:
             for axis in ("x", "y", "z"):
@@ -74,9 +74,8 @@ class MotionController:
 
             # Check hardware status non-blocking
             idle = self._client.is_idle
-            if idle is not True:
-                 return
-
+            if idle is False:
+                return
 
             # Clamp and build G-code
             clamped: Dict[str, float] = {}
@@ -120,25 +119,9 @@ class MotionController:
             # Clear consumed intent so motion is edge-triggered, not level-triggered
             for axis in clamped:
                 self._intent[axis] = None
+        print("Motion idle state:", idle)
 
-    def home(self, timeout: float = 30.0) -> None:
-        """
-        Perform a full homing cycle.
-        Blocking. Explicit use only (INIT / SHUTDOWN).
-        """
-        # Send homing command
-        self._client.call(
-            "printer.gcode.script",
-            {"script": "G28"},
-            timeout_s=timeout
-    )
-
-    # Optionally wait until idle for safety
-        if hasattr(self._client, "wait_until_idle"):
-            ok = self._client.wait_until_idle(timeout_s=timeout)
-            if not ok:
-                raise RuntimeError("Homing completed but printer did not return to idle")
-
+    
 
     # -- Optional blocking call (explicit use only; never for SEARCH or TRACK) --
 
@@ -148,13 +131,15 @@ class MotionController:
         Never called except by higher layers for INIT/SHUTDOWN.
         Returns True if idle reached, else False on timeout.
         """
-        self.emit_motion()
+        self.update()
+
+    # Block only if Moonraker supports it
         if hasattr(self._client, "wait_until_idle"):
             try:
-                # Wait (blocking), don't loop forever, surface errors upward
                 return bool(self._client.wait_until_idle(timeout_s=timeout))
             except Exception:
                 return False
+
         return False
 
     # -- Safe state helpers --

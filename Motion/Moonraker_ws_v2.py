@@ -61,6 +61,12 @@ class MoonrakerWSClient:
         self._printer_state: Dict[str, Any] = {}
         self._printer_status_time: Optional[float] = None
 
+        # Toolhead timing cache
+        self._toolhead_print_time: Optional[float] = None
+        self._toolhead_estimated_print_time: Optional[float] = None
+        self._motion_queue_empty: Optional[bool] = None
+        self._motion_epsilon: float = 1e-3
+
     # --------------------------------------------------------
     # Connection Lifecycle
     # --------------------------------------------------------
@@ -101,11 +107,16 @@ class MoonrakerWSClient:
                 },
             )
         # After subscription, fetch initial printer state to seed _printer_state
-        # --- ADD THIS BLOCK ---
-            # Fetch initial printer state to seed print_stats
+            # Fetch initial printer state to seed print_stats, idle_timeout, and toolhead timing
             resp = self.call(
                 "printer.objects.query",
-                {"objects": {"print_stats": None}},
+                {
+                    "objects": {
+                        "print_stats": None,
+                        "idle_timeout": ["state", "printing_time"],
+                        "toolhead": ["print_time", "estimated_print_time"],
+                    }
+                },
                 timeout_s=2.0,
             )
             status = resp.get("result", {}).get("status", {})
@@ -113,6 +124,7 @@ class MoonrakerWSClient:
                 with self._cache_lock:
                     self._printer_state.update(status)
                     self._printer_status_time = time.time()
+                    self._refresh_motion_queue_state()
         except Exception:
             pass  # Do not block connection on subscription failure
             
@@ -235,22 +247,62 @@ class MoonrakerWSClient:
 
     @property
     def is_idle(self) -> Optional[bool]:
-        state = self._printer_state.get("print_stats")
-        if not isinstance(state, dict):
+        """
+        Return True if printer is idle (not executing G-code), False if busy,
+        or None if state is unknown.
+        
+        Checks idle_timeout.state for actual G-code execution status.
+        """
+        with self._cache_lock:
+            # Check idle_timeout.state - this is the reliable indicator
+            idle_timeout = self._printer_state.get("idle_timeout")
+            if isinstance(idle_timeout, dict):
+                state = idle_timeout.get("state")
+                if isinstance(state, str):
+                    state_lower = state.lower()
+                    if state_lower in ("idle", "ready"):
+                        return True
+                    if state_lower == "printing":
+                        return False
+            
+            # Fallback to print_stats if idle_timeout.state not available
+            print_stats = self._printer_state.get("print_stats")
+            if isinstance(print_stats, dict):
+                status = print_stats.get("state")
+                if isinstance(status, str):
+                    status_lower = status.lower()
+                    if status_lower in ("standby", "ready", "complete"):
+                        return True
+                    if status_lower in ("printing", "paused"):
+                        return False
+            
             return None
 
-        status = state.get("state")
-        if not status:
+    @property
+    def estimated_print_time(self) -> Optional[float]:
+        """Return toolhead.estimated_print_time, or None if not available."""
+        with self._cache_lock:
+            toolhead = self._printer_state.get("toolhead")
+            if isinstance(toolhead, dict):
+                ept = toolhead.get("estimated_print_time")
+                if isinstance(ept, (int, float)):
+                    return float(ept)
             return None
 
-        status = status.lower()
-        if status in ("standby", "ready", "complete"):
-            return True
-        if status in ("printing", "paused"):
-            return False
+    @property
+    def motion_queue_empty(self) -> Optional[bool]:
+        """Return True when (estimated_print_time - print_time) <= epsilon, else False/None."""
+        with self._cache_lock:
+            return self._motion_queue_empty
 
-        return None
-
+    @property
+    def queue_depth(self) -> Optional[float]:
+        """Return (estimated_print_time - print_time) in seconds, or None if unknown."""
+        with self._cache_lock:
+            if self._toolhead_print_time is not None and self._toolhead_estimated_print_time is not None:
+                diff = self._toolhead_estimated_print_time - self._toolhead_print_time
+                return diff
+            return None
 
     def _update_printer_state(self, notification: dict) -> None:
         params = notification.get("params")
@@ -259,9 +311,60 @@ class MoonrakerWSClient:
         if not isinstance(params[0], dict):
             return
 
+        incoming = params[0]
+
         with self._cache_lock:
-            self._printer_state.update(params[0])
+            # Debug log of raw toolhead payload (single line to reduce spam)
+            if "toolhead" in incoming:
+                try:
+                    print(
+                        "[MoonrakerWS] toolhead notify",
+                        json.dumps(incoming.get("toolhead", {}), sort_keys=True),
+                    )
+                except Exception:
+                    pass
+
+            # Merge top-level state, with deep merge for toolhead to avoid losing fields
+            for key, value in incoming.items():
+                if key == "toolhead" and isinstance(value, dict):
+                    existing = self._printer_state.get("toolhead")
+                    if isinstance(existing, dict):
+                        merged = existing.copy()
+                        merged.update(value)
+                        self._printer_state["toolhead"] = merged
+                    else:
+                        self._printer_state["toolhead"] = value
+                else:
+                    self._printer_state[key] = value
+
             self._printer_status_time = time.time()
+            self._refresh_motion_queue_state()
+
+    def _refresh_motion_queue_state(self) -> None:
+        toolhead = self._printer_state.get("toolhead")
+        if isinstance(toolhead, dict):
+            raw_pt = toolhead.get("print_time")
+            raw_ept = toolhead.get("estimated_print_time")
+            if isinstance(raw_pt, (int, float)):
+                self._toolhead_print_time = float(raw_pt)
+            if isinstance(raw_ept, (int, float)):
+                self._toolhead_estimated_print_time = float(raw_ept)
+
+        pt = self._toolhead_print_time
+        ept = self._toolhead_estimated_print_time
+
+        if pt is None or ept is None:
+            # Unknown until both are seen at least once
+            self._motion_queue_empty = None
+            return
+
+        diff = ept - pt
+        # Queue is busy only when estimated_print_time is significantly ahead of print_time
+        # Negative diff (print_time > estimated) is an async update artifact, treat as empty
+        if diff > self._motion_epsilon:
+            self._motion_queue_empty = False
+        else:
+            self._motion_queue_empty = True
 
     @property
     def cached_printer_state(self) -> Mapping[str, Any]:

@@ -1,46 +1,60 @@
 from dataclasses import dataclass, field
-from Config.Seach_Config import min_z, max_z, start_z, step
+import time
+
 
 @dataclass
 class SearchConfig:
-    min_z: float
-    max_z: float
-    start_z: float
-    step: float
+    min_angle: float  # degrees
+    max_angle: float  # degrees
+    start_angle: float  # degrees
+    angular_velocity: float = 10.0  # degrees per second
+    max_angular_velocity: float = 10  # hard cap deg/s
     initial_direction: int = field(default=1)  # +1 for up, -1 for down
 
 
 class SearchController:
+    """
+    Time-based angular search pattern.
+    Outputs angular offset in degrees, independent of loop frequency.
+    """
+
     def __init__(self, config: SearchConfig):
         self._config = config
-        self.reset()
+        self._current_angle: float = config.start_angle
+        self._direction: int = config.initial_direction
+        self._last_update_time: float = time.monotonic()
+        # Clamp velocity to hard cap
+        self._velocity = min(config.angular_velocity, config.max_angular_velocity)
 
-    def reset(self):
-        self._current_z = self._config.start_z
+    def reset(self) -> None:
+        self._current_angle = self._config.start_angle
         self._direction = self._config.initial_direction
+        self._last_update_time = time.monotonic()
 
-    def update(self):
+    def update(self) -> dict:
         """
-        Computes the next scan Z position and returns a motion intent dict: {"z": float}.
-        Does NOT move, block, or control time. Pure logic only.
+        Compute next angular position based on elapsed wall-clock time.
+        Returns {"angle": float} in degrees.
+        Time-deterministic: works correctly at any loop frequency.
         """
-        min_z, max_z, step = self._config.min_z, self._config.max_z, self._config.step
-        z = self._current_z
-        direction = self._direction
+        now = time.monotonic()
+        dt = now - self._last_update_time
+        self._last_update_time = now
 
-        # Compute next Z position and reverse direction only at bounds
-        next_z = z + step * direction
+        # Clamp dt to avoid huge jumps on stall (max 100ms)
+        dt = min(dt, 0.1)
 
-        # Clamp, reverse at bounds
-        if next_z > max_z:
-            next_z = max_z
-            direction = -1
-        elif next_z < min_z:
-            next_z = min_z
-            direction = 1
+        # Advance angle
+        delta = self._velocity * dt * self._direction
+        next_angle = self._current_angle + delta
 
-        # Update internal state for next call
-        self._current_z = next_z
-        self._direction = direction
+        # Bounce at bounds
+        if next_angle > self._config.max_angle:
+            next_angle = self._config.max_angle
+            self._direction = -1
+        elif next_angle < self._config.min_angle:
+            next_angle = self._config.min_angle
+            self._direction = 1
 
-        return {"z": next_z}
+        self._current_angle = next_angle
+        return {"angle": next_angle}

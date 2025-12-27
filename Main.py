@@ -18,15 +18,17 @@ def main():
         "limits": {"x": [0, 11.5], "y": [0, 7.60], "z": [0, 20]},
         "neutral": {"x": 5.75, "y": 3.80, "z": 10.0},
         "speeds": {"travel": 2000, "z": 300},
+        "angular_velocity": search_config.angular_velocity,
     }
     motion = MotionController(moonraker, motion_cfg)
     
     search = SearchController(
         SearchConfig(
-            min_z=search_config.min_z,
-            max_z=search_config.max_z,
-            start_z=search_config.start_z,
-            step=search_config.step,
+            min_angle=search_config.min_angle,
+            max_angle=search_config.max_angle,
+            start_angle=search_config.start_angle,
+            angular_velocity=search_config.angular_velocity,
+            max_angular_velocity=search_config.max_angular_velocity,
         )
     )
     while True:
@@ -43,12 +45,9 @@ def main():
         if state == STATE_SEARCH:
             intent = search.update()
             if intent:
-                motion.set_intent(**intent)
+                motion.set_intent(**intent)  # passes angle=... to MotionController
             motion.update()
-            print("Search intent:", intent)
-            import time
-            print("In SEARCH state...")
-            continue
+            continue 
 
         if state == STATE_SHUTDOWN:
             print("[STATE] SHUTDOWN")

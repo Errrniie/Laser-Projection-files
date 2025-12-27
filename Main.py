@@ -15,9 +15,9 @@ def main():
 
     moonraker = MoonrakerWSClient("ws://192.168.8.146/websocket")
     motion_cfg = {
-        "limits": {"x": [-100, 100], "y": [-100, 100], "z": [0, 20]},
-        "neutral": {"x": 0.0, "y": 0.0, "z": 10.0},
-        "speeds": {"travel": 5000, "z": 1500},
+        "limits": {"x": [0, 11.5], "y": [0, 7.60], "z": [0, 20]},
+        "neutral": {"x": 5.75, "y": 3.80, "z": 10.0},
+        "speeds": {"travel": 2000, "z": 300},
     }
     motion = MotionController(moonraker, motion_cfg)
     
@@ -41,13 +41,13 @@ def main():
             continue
 
         if state == STATE_SEARCH:
-            print("[STATE] SEARCH")
             intent = search.update()
-            if intent is not None:
+            if intent:
                 motion.set_intent(**intent)
             motion.update()
+            print("Search intent:", intent)
             import time
-            time.sleep(0.01)
+            print("In SEARCH state...")
             continue
 
         if state == STATE_SHUTDOWN:
@@ -55,6 +55,7 @@ def main():
             motion.set_neutral_intent(z=0.0)
             motion.move_blocking()
             moonraker.close()
+            print("Shutdown complete.")
             break
 
 if __name__ == "__main__":

@@ -1,22 +1,35 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional
 import threading
+import time
 
-# Only permitted public class
+
 class MotionController:
     """
-    Pure motion execution layer for Moonraker. Receives high-level intent,
-    computes safe G-code, and prevents overlapping hardware motion.
-    Never makes behavior or timing decisions. Threadsafe for Main polling.
+    Fixed-rate streaming motion controller for Moonraker.
+    
+    This is the ONLY place where command timing exists in the system.
+    
+    Behavior:
+    - Maintains a fixed-rate send loop (configurable Hz)
+    - On each tick: reads latest intent, converts to G-code, sends command
+    - Uses intent coalescing / deadband to avoid micro-jitter
+    - Does NOT wait for motion completion or inspect queue depth
+    - Z axis uses RELATIVE positioning: tracks last commanded Z and sends deltas
+    
+    This is a velocity-limited streaming controller, not a serialized executor.
     """
+
     def __init__(self, moonraker: Any, config: Dict[str, Any]):
         """
-        moonraker : MoonrakerWSClient (not checked here)
+        moonraker : MoonrakerWSClient
         config: dict with axis limits, neutral pose, speeds:
             {
                 "limits": {"x": [min, max], "y": [min, max], "z": [min, max]},
                 "neutral": {"x": float, "y": float, "z": float},
-                "speeds": {"travel": float, "z": float}
+                "speeds": {"travel": float, "z": float},
+                "angular_velocity": float,  # deg/s for search
+                "send_rate_hz": float,  # optional, default 30
             }
         """
         self._client = moonraker
@@ -25,23 +38,33 @@ class MotionController:
         self._speeds = config.get("speeds", {})
         self._lock = threading.Lock()
 
-        # Geometry: degrees to mm conversion
-        # Z axis: rotation_distance=8 → 8mm/360deg = 0.022222 mm/deg
-        self._z_deg_to_mm: float = 8.0 / 360.0  # ≈0.022222
-        # Angular velocity for feedrate: 1.333333 mm/min per deg/s
-        self._z_deg_per_sec_to_feedrate = 60 * self._z_deg_to_mm
-        # Configured angular velocity (set from Search config or default)
-        self._angular_velocity: float = config.get("angular_velocity", 3.0)
+        # Fixed-rate timing (sole owner of timing in the system)
+        self._send_rate_hz: float = config.get("send_rate_hz", 5.0)
+        self._send_period_s: float = 1.0 / self._send_rate_hz
+        self._last_send_time: float = 0.0
 
-        # Internal current intent; None means unset/no change
+        # Geometry: degrees to mm conversion (from config)
+        self._z_deg_to_mm: float = config.get("mm_per_degree", 8.0 / 360.0)
+
+        # Feedrate multiplier for smooth streaming (from config)
+        self._feedrate_multiplier: float = config.get("feedrate_multiplier", 2.0)
+
+        # Configured angular velocity (from config)
+        self._angular_velocity: float = config.get("angular_velocity", 60.0)
+
+        # Current intent (target position - absolute values from behavior modules)
         self._intent: Dict[str, Optional[float]] = {"x": None, "y": None, "z": None}
-        # Last target actually sent
+        # Last target actually sent (for X/Y absolute tracking)
         self._last_sent: Dict[str, Optional[float]] = {"x": None, "y": None, "z": None}
 
-        # Deadband for Z intent coalescing (in mm, ~0.5 deg)
-        self._deadband_z: float = 0.01
+        # Relative Z tracking: last commanded Z position (absolute value in mm)
+        # Used to compute delta for relative motion commands
+        self._last_commanded_z: Optional[float] = None
 
-    # -- Intent Setting --
+        # Deadband disabled for smooth streaming
+        self._deadband_z: float = 0.0
+
+    # -- Intent Setting (non-blocking, called by behavior modules) --
 
     def set_intent(
         self,
@@ -52,10 +75,9 @@ class MotionController:
         angle: Optional[float] = None,
     ) -> None:
         """
-        Non-blocking, overwrite previous intent for given axes.
+        Set target position intent. Non-blocking.
         Use 'angle' (degrees) for Z axis angular control.
         Unspecified axes are not affected.
-        Does not emit or block or validate.
         """
         with self._lock:
             if x is not None:
@@ -68,120 +90,222 @@ class MotionController:
                 # Convert angle (degrees) to Z mm
                 self._intent["z"] = angle * self._z_deg_to_mm
 
-    def set_neutral_intent(self) -> None:
-        """Set intent to neutral pose (does not block, does not emit)."""
+    def set_neutral_intent(self, z: Optional[float] = None) -> None:
+        """Set intent to neutral pose. Optional z override."""
         with self._lock:
             for axis in ("x", "y", "z"):
                 val = self._neutral.get(axis)
                 if val is not None:
                     self._intent[axis] = val
+            if z is not None:
+                self._intent["z"] = z
 
-    # -- Motion Execution (Main-driven, safe to call every frame) --
+    # -- Fixed-rate update (called from main loop) --
+
     def update(self) -> None:
         """
-        Examines current intent vs. last-sent, clamps as needed,
-        emits minimal required G-code to _client, and updates last_sent.
-        Skips motion if printer is busy or no motion is pending.
-        Does not block.
+        Fixed-rate streaming update. Safe to call every frame.
+        
+        - Enforces send rate limiting (e.g., 5 Hz)
+        - Reads current intent (absolute positions from behavior modules)
+        - For Z axis: computes delta from last commanded position, sends relative move
+        - For X/Y: sends absolute moves via MOVE command
+        - Does NOT block or wait for motion completion
         """
+        now = time.monotonic()
+        
+        # Rate limiting: only send at configured frequency
+        if (now - self._last_send_time) < self._send_period_s:
+            return
+        
         with self._lock:
-            queue_empty = self._client.motion_queue_empty
-
-            has_sent_any = any(value is not None for value in self._last_sent.values())
-
-            if queue_empty is None:
-                if not has_sent_any:
-                    # Allow initial dispatch when no prior motion has been sent
-                    queue_empty = True
-                else:
-                    return
-
-            if queue_empty is False:
-                return  # Still draining queue
-
-            # Queue is empty (or treated as such), ready to send next command
-
-            # Get snapshot of intent and last sent
+            # Snapshot intent
             tgt = self._intent.copy()
-            prev = self._last_sent.copy()
 
-            # Find which axes have new intent we haven't sent
-            move_axes = {a: tgt[a] for a in ("x", "y", "z") if tgt[a] is not None and tgt[a] != prev[a]}
+            # --- Handle Z axis with relative positioning ---
+            target_z = tgt.get("z")
+            delta_z: Optional[float] = None
+            clamped_z: Optional[float] = None
 
-            # Coalesce Z moves within deadband to avoid extra commands in a single completion window
-            if "z" in move_axes and prev["z"] is not None:
-                if abs(move_axes["z"] - prev["z"]) <= self._deadband_z:
-                    move_axes.pop("z")
-
-            if not move_axes:
-                return  # No new motion intent
-
-            # Clamp and build G-code
-            clamped = {}
-            for axis, val in move_axes.items():
-                lo, hi = self._limits.get(axis, (None, None))
-                v = float(val)
+            if target_z is not None:
+                # Clamp target to limits
+                lo, hi = self._limits.get("z", (None, None))
+                clamped_z = float(target_z)
                 if lo is not None:
-                    v = max(lo, v)
+                    clamped_z = max(lo, clamped_z)
                 if hi is not None:
-                    v = min(hi, v)
-                clamped[axis] = v
+                    clamped_z = min(hi, clamped_z)
 
-            # Construct G-code in absolute mode
-            abs_x = clamped.get("x", self._last_sent["x"])
-            abs_y = clamped.get("y", self._last_sent["y"])
-            abs_z = clamped.get("z", self._last_sent["z"])
-            
-            # Compute feedrate: use angular velocity for Z-only moves
-            is_z_only = "z" in clamped and "x" not in clamped and "y" not in clamped
-            if is_z_only:
-                # Feedrate from angular velocity: deg/s → mm/min
-                f = self._angular_velocity * self._z_deg_per_sec_to_feedrate
-            else:
-                f = self._speeds.get("travel", 2000)
-            
-            parts = []
-            if abs_x is not None:
-                parts.append(f"x={abs_x:.2f}")
-            if abs_y is not None:
-                parts.append(f"y={abs_y:.2f}")
-            if abs_z is not None:
-                parts.append(f"z={abs_z:.2f}")
-                
-            cmd = f"MOVE {' '.join(parts)} SPEED={f:.0f}"
+                # Compute delta from last commanded position
+                if self._last_commanded_z is None:
+                    # First command: assume we're at the target (no delta)
+                    # This gets initialized properly in move_blocking during INIT
+                    delta_z = 0.0
+                else:
+                    delta_z = clamped_z - self._last_commanded_z
 
-            queue_depth = self._client.queue_depth
-            self._client.send_gcode(cmd)
-            depth_str = "None" if queue_depth is None else f"{queue_depth:.4f}s"
-            print(f"[MotionController] Sent: {cmd}, queue_depth={depth_str}")
-            
-            # Update last_sent for moved axes ONLY
-            for axis in clamped:
-                self._last_sent[axis] = clamped[axis]
-                self._intent[axis] = None
+                # Apply deadband to avoid micro-jitter
+                if abs(delta_z) <= self._deadband_z:
+                    delta_z = None  # No meaningful change
 
-                
+            # --- Handle X/Y with absolute positioning (if needed) ---
+            prev = self._last_sent.copy()
+            xy_move: Dict[str, float] = {}
+            for axis in ("x", "y"):
+                if tgt[axis] is not None:
+                    if prev[axis] is None or tgt[axis] != prev[axis]:
+                        # Clamp to limits
+                        lo, hi = self._limits.get(axis, (None, None))
+                        v = float(tgt[axis])
+                        if lo is not None:
+                            v = max(lo, v)
+                        if hi is not None:
+                            v = min(hi, v)
+                        xy_move[axis] = v
 
-    # -- Optional blocking call (explicit use only; never for SEARCH or TRACK) --
+            # Check if there's anything to send
+            has_z_move = delta_z is not None and delta_z != 0.0
+            has_xy_move = len(xy_move) > 0
+
+            if not has_z_move and not has_xy_move:
+                return  # No meaningful change
+
+            # --- Compute feedrate ---
+            # Base feedrate from angular velocity: deg/s * (mm/deg) * 60 = mm/min
+            base_feedrate = self._angular_velocity * self._z_deg_to_mm * 60.0
+            # Overspeed so motor finishes before next command
+            f = base_feedrate * self._feedrate_multiplier
+
+            # --- Send commands ---
+            if has_z_move and not has_xy_move:
+                # Z-only move: use relative positioning (G91)
+                cmd = f"Move z={delta_z:.4f} F{f:.0f}"
+                self._client.send_gcode(cmd)
+                self._last_send_time = now
+
+                # Update internal state
+                self._last_commanded_z = clamped_z
+                self._last_sent["z"] = clamped_z
+
+            elif has_xy_move:
+                # X/Y move (with or without Z): use MOVE command for X/Y, relative for Z
+                if has_z_move:
+                    # Combined move: X/Y         + Z relative
+                    # Send Z relative first, then X/Y absolute
+                    z_cmd = f"Move z={delta_z:.4f} F{f:.0f}"
+                    self._client.send_gcode(z_cmd)
+                    self._last_commanded_z = clamped_z
+                    self._last_sent["z"] = clamped_z
+
+                # Send X/Y absolute move
+                parts = []
+                for axis in ("x", "y"):
+                    if axis in xy_move:
+                        parts.append(f"{axis}={xy_move[axis]:.3f}")
+                        self._last_sent[axis] = xy_move[axis]
+
+                if parts:
+                    travel_f = max(f, self._speeds.get("travel", 800))
+                    xy_cmd = f"MOVE {' '.join(parts)} SPEED={travel_f:.0f}"
+                    self._client.send_gcode(xy_cmd)
+
+                self._last_send_time = now
+                print(f"[Motion] XY move: {xy_move}")
+
+    # -- Blocking move (for INIT/SHUTDOWN only) --
 
     def move_blocking(self, timeout: float = 10.0) -> bool:
         """
-        Emit pending motion, then (optionally) wait until printer reports idle.
-        Never called except by higher layers for INIT/SHUTDOWN.
-        Returns True if idle reached, else False on timeout.
+        Force-send current intent and wait briefly for motion to start.
+        Only for INIT/SHUTDOWN sequences, never for SEARCH or TRACK.
+        
+        Uses ABSOLUTE positioning (G90) to establish known position.
+        Initializes _last_commanded_z for subsequent relative streaming.
+        Returns True immediately (no queue inspection).
         """
-        self.update()
+        # Force send regardless of rate limit
+        with self._lock:
+            tgt = self._intent.copy()
+            
+            # Clamp all axes and build absolute move command
+            clamped: Dict[str, float] = {}
+            for axis in ("x", "y", "z"):
+                val = tgt.get(axis)
+                if val is not None:
+                    lo, hi = self._limits.get(axis, (None, None))
+                    v = float(val)
+                    if lo is not None:
+                        v = max(lo, v)
+                    if hi is not None:
+                        v = min(hi, v)
+                    clamped[axis] = v
+                    self._last_sent[axis] = v
 
-    # Block only if Moonraker supports it
-        if hasattr(self._client, "wait_until_idle"):
-            try:
-                return bool(self._client.wait_until_idle(timeout_s=timeout))
-            except Exception:
-                return False
+            if clamped:
+                # Use standard G-code for absolute positioning
+                f = self._speeds.get("travel", 2000)
+                parts = []
+                for axis in ("x", "y", "z"):
+                    if axis in clamped:
+                        parts.append(f"{axis.upper()}{clamped[axis]:.3f}")
 
-        return False
+                # G90 = absolute positioning, G0 = rapid move
+                cmd = f"G90\nG0 {' '.join(parts)} F{f:.0f}"
+                self._client.send_gcode(cmd)
+                self._last_send_time = time.monotonic()
 
-    # -- Safe state helpers --
+                # Initialize _last_commanded_z for relative streaming
+                if "z" in clamped:
+                    self._last_commanded_z = clamped["z"]
+                    print(f"[Motion] Blocking move complete. Z initialized to {self._last_commanded_z:.3f}mm")
+
+        # Brief pause to allow motion to start (not waiting for completion)
+        time.sleep(0.5)
+        return True
+
+    def move_z_relative_blocking(self, z_delta: float, timeout: float = 10.0) -> bool:
+        """
+        Send a relative Z move and block until Moonraker acknowledges completion.
+        
+        Uses G91 (relative) + G0 + M400 (wait for moves) + G90 (back to absolute).
+        Blocks until the command response is received from Moonraker.
+        
+        Args:
+            z_delta: Relative Z movement in mm (positive = up, negative = down)
+            timeout: Timeout for blocking call
+            
+        Returns:
+            True on success
+        """
+        with self._lock:
+            # Compute feedrate
+            f = self._speeds.get("z", 200)
+            
+            # Build relative move command with M400 for synchronization
+            cmd = f"G91\nG0 Z{z_delta:.4f} F{f:.0f}\nM400\nG90"
+            
+            # Update internal Z tracking
+            if self._last_commanded_z is not None:
+                self._last_commanded_z += z_delta
+                # Clamp to limits
+                lo, hi = self._limits.get("z", (None, None))
+                if lo is not None:
+                    self._last_commanded_z = max(lo, self._last_commanded_z)
+                if hi is not None:
+                    self._last_commanded_z = min(hi, self._last_commanded_z)
+                self._last_sent["z"] = self._last_commanded_z
+
+        # Send blocking call - waits for Moonraker response
+        self._client.call(
+            "printer.gcode.script",
+            {"script": cmd},
+            timeout_s=timeout
+        )
+        
+        print(f"[Motion] Z{z_delta:+.3f}mm complete -> Z={self._last_commanded_z:.3f}mm")
+        return True
+
+    # -- State accessors --
 
     @property
     def target_intent(self) -> Dict[str, Optional[float]]:
@@ -194,5 +318,3 @@ class MotionController:
         """Snapshot copy of last-sent, for debug."""
         with self._lock:
             return self._last_sent.copy()
-        
-    

@@ -2,33 +2,55 @@ from Motion.Moonraker_ws_v2 import MoonrakerWSClient
 from Motion.MotionController import MotionController
 from Motion.Home import home
 from Behavior.Search_v2 import SearchController, SearchConfig
-import Config.Seach_Config as search_config
+from Behavior.TrackingController import TrackingController, TrackingConfig
+import Config.motion_config as cfg
+from YoloModel.YoloInterface import start_vision, stop_vision, get_latest_detection
 
 # --- System states ---
 STATE_INIT = "INIT"
 STATE_SEARCH = "SEARCH"
+STATE_TRACK = "TRACK"
 STATE_SHUTDOWN = "SHUTDOWN"
+
+# --- Detection thresholds ---
+TRACK_CONFIDENCE_THRESHOLD = 0.6  # Confidence needed to enter TRACK
 
 
 def main():
     state = STATE_INIT
-
     moonraker = MoonrakerWSClient("ws://192.168.8.146/websocket")
     motion_cfg = {
-        "limits": {"x": [0, 11.5], "y": [0, 7.60], "z": [0, 20]},
-        "neutral": {"x": 5.75, "y": 3.80, "z": 10.0},
-        "speeds": {"travel": 2000, "z": 300},
-        "angular_velocity": search_config.angular_velocity,
+        "limits": {
+            "x": [cfg.X_MIN, cfg.X_MAX],
+            "y": [cfg.Y_MIN, cfg.Y_MAX],
+            "z": [cfg.Z_MIN, cfg.Z_MAX],
+        },
+        "neutral": {
+            "x": cfg.NEUTRAL_X,
+            "y": cfg.NEUTRAL_Y,
+            "z": cfg.NEUTRAL_Z,
+        },
+        "speeds": {"travel": cfg.TRAVEL_SPEED, "z": cfg.Z_SPEED},
     }
     motion = MotionController(moonraker, motion_cfg)
-    
+
     search = SearchController(
         SearchConfig(
-            min_angle=search_config.min_angle,
-            max_angle=search_config.max_angle,
-            start_angle=search_config.start_angle,
-            angular_velocity=search_config.angular_velocity,
-            max_angular_velocity=search_config.max_angular_velocity,
+            min_z=cfg.Z_MIN,
+            max_z=cfg.Z_MAX,
+            start_z=cfg.NEUTRAL_Z,
+            step_size=1.0,
+        )
+    )
+    
+    tracker = TrackingController(
+        TrackingConfig(
+            frame_width=1080,
+            frame_height=720,
+            deadzone_px=30,
+            kp=0.003,
+            max_step_mm=3.0,
+            confidence_threshold=TRACK_CONFIDENCE_THRESHOLD,
         )
     )
     while True:
@@ -36,6 +58,7 @@ def main():
             print("[STATE] INIT")
             moonraker.connect()
             home(moonraker)
+            start_vision()
             motion.set_neutral_intent()
             motion.move_blocking()
             print("Initialization complete. Transitioning to SEARCH state.")
@@ -43,14 +66,47 @@ def main():
             continue
 
         if state == STATE_SEARCH:
-            intent = search.update()
-            if intent:
-                motion.set_intent(**intent)  # passes angle=... to MotionController
-            motion.update()
-            continue 
+            # Check for human detection - transition to TRACK if found
+            detection = get_latest_detection()
+            if detection.has_target and detection.confidence >= TRACK_CONFIDENCE_THRESHOLD:
+                print(f"[SEARCH] Target acquired! Center: {detection.bbox_center}, Confidence: {detection.confidence:.2f}")
+                print("[STATE] SEARCH → TRACK")
+                tracker.reset()
+                state = STATE_TRACK
+                continue
+            
+            # No target - continue search pattern
+            step = search.update()
+            z_delta = step["z_delta"]
+            motion.move_z_relative_blocking(z_delta)
+            continue
+
+        if state == STATE_TRACK:
+            # Get latest detection
+            detection = get_latest_detection()
+            
+            # Compute tracking intent (math only)
+            track_result = tracker.update(detection.bbox_center, detection.confidence)
+            
+            # Check if target is lost - transition back to SEARCH
+            if tracker.is_target_lost():
+                print("[TRACK] Target lost!")
+                print("[STATE] TRACK → SEARCH")
+                state = STATE_SEARCH
+                continue
+            
+            # If tracking says we should move, send the command
+            if track_result["should_move"]:
+                z_delta = track_result["z_delta"]
+                print(f"[TRACK] error={track_result['error_px']:.0f}px → z_delta={z_delta:+.3f}mm")
+                motion.move_z_relative_blocking(z_delta)
+            
+            # If locked but no move needed (in deadzone), just loop
+            continue
 
         if state == STATE_SHUTDOWN:
             print("[STATE] SHUTDOWN")
+            stop_vision()
             motion.set_neutral_intent(z=0.0)
             motion.move_blocking()
             moonraker.close()

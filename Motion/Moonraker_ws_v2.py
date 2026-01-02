@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Mapping, Optional
-
+from typing import Any, Callable, Dict, Optional
+import time
 import websocket
 
 
@@ -21,13 +20,12 @@ class MoonrakerWSClient:
     - Maintain a WebSocket connection
     - Send JSON-RPC requests
     - Match responses by request ID
-    - Mirror printer state from notifications
     - Dispatch notifications to registered handlers
 
     Non-responsibilities:
-    - Motion control logic
+    - Motion control logic / timing
+    - Queue depth tracking
     - State machines
-    - Timing / coordination logic
     """
 
     # --------------------------------------------------------
@@ -48,7 +46,6 @@ class MoonrakerWSClient:
         self._send_lock = threading.Lock()
         self._pending_lock = threading.Lock()
         self._notifier_lock = threading.Lock()
-        self._cache_lock = threading.Lock()
 
         # JSON-RPC request tracking
         self._next_id: int = 1
@@ -56,16 +53,6 @@ class MoonrakerWSClient:
 
         # Notification handlers
         self._notif_handlers: Dict[str, Callable[[dict], None]] = {}
-
-        # Cached printer state
-        self._printer_state: Dict[str, Any] = {}
-        self._printer_status_time: Optional[float] = None
-
-        # Toolhead timing cache
-        self._toolhead_print_time: Optional[float] = None
-        self._toolhead_estimated_print_time: Optional[float] = None
-        self._motion_queue_empty: Optional[bool] = None
-        self._motion_epsilon: float = 1e-3
 
     # --------------------------------------------------------
     # Connection Lifecycle
@@ -91,42 +78,6 @@ class MoonrakerWSClient:
             daemon=True,
         )
         self._rx_thread.start()
-
-        # Best-effort subscription to printer state
-        try:
-            self.call(
-                "printer.objects.subscribe",
-                {
-                    "objects": {
-                        "print_stats": None,
-                        "toolhead": None,
-                        "virtual_sdcard": None,
-                        "idle_timeout": None,
-                        "display_status": None,
-                    }
-                },
-            )
-        # After subscription, fetch initial printer state to seed _printer_state
-            # Fetch initial printer state to seed print_stats, idle_timeout, and toolhead timing
-            resp = self.call(
-                "printer.objects.query",
-                {
-                    "objects": {
-                        "print_stats": None,
-                        "idle_timeout": ["state", "printing_time"],
-                        "toolhead": ["print_time", "estimated_print_time"],
-                    }
-                },
-                timeout_s=2.0,
-            )
-            status = resp.get("result", {}).get("status", {})
-            if status:
-                with self._cache_lock:
-                    self._printer_state.update(status)
-                    self._printer_status_time = time.time()
-                    self._refresh_motion_queue_state()
-        except Exception:
-            pass  # Do not block connection on subscription failure
             
     def close(self) -> None:
         """Shut down RX thread, close socket, fail pending requests."""
@@ -221,160 +172,19 @@ class MoonrakerWSClient:
         return pending.response
 
     def send_gcode(self, gcode: str) -> None:
-        print("Moonraker send_gcode called")
-        print(gcode)
-
+        """Fire-and-forget G-code send. Does not wait for completion."""
         msg = {
             "jsonrpc": "2.0",
             "method": "printer.gcode.script",
             "params": {"script": gcode}
         }
 
-        txt = json.dumps(msg)
-
         with self._send_lock:
             ws = self._ws
             if not ws:
                 raise RuntimeError("WebSocket is None")
-            ws.send(txt)
-
-        print("Moonraker WS SEND OK")
-
-
-    # --------------------------------------------------------
-    # Printer State Helpers
-    # --------------------------------------------------------
-
-    @property
-    def is_idle(self) -> Optional[bool]:
-        """
-        Return True if printer is idle (not executing G-code), False if busy,
-        or None if state is unknown.
-        
-        Checks idle_timeout.state for actual G-code execution status.
-        """
-        with self._cache_lock:
-            # Check idle_timeout.state - this is the reliable indicator
-            idle_timeout = self._printer_state.get("idle_timeout")
-            if isinstance(idle_timeout, dict):
-                state = idle_timeout.get("state")
-                if isinstance(state, str):
-                    state_lower = state.lower()
-                    if state_lower in ("idle", "ready"):
-                        return True
-                    if state_lower == "printing":
-                        return False
-            
-            # Fallback to print_stats if idle_timeout.state not available
-            print_stats = self._printer_state.get("print_stats")
-            if isinstance(print_stats, dict):
-                status = print_stats.get("state")
-                if isinstance(status, str):
-                    status_lower = status.lower()
-                    if status_lower in ("standby", "ready", "complete"):
-                        return True
-                    if status_lower in ("printing", "paused"):
-                        return False
-            
-            return None
-
-    @property
-    def estimated_print_time(self) -> Optional[float]:
-        """Return toolhead.estimated_print_time, or None if not available."""
-        with self._cache_lock:
-            toolhead = self._printer_state.get("toolhead")
-            if isinstance(toolhead, dict):
-                ept = toolhead.get("estimated_print_time")
-                if isinstance(ept, (int, float)):
-                    return float(ept)
-            return None
-
-    @property
-    def motion_queue_empty(self) -> Optional[bool]:
-        """Return True when (estimated_print_time - print_time) <= epsilon, else False/None."""
-        with self._cache_lock:
-            return self._motion_queue_empty
-
-    @property
-    def queue_depth(self) -> Optional[float]:
-        """Return (estimated_print_time - print_time) in seconds, or None if unknown."""
-        with self._cache_lock:
-            if self._toolhead_print_time is not None and self._toolhead_estimated_print_time is not None:
-                diff = self._toolhead_estimated_print_time - self._toolhead_print_time
-                return diff
-            return None
-
-    def _update_printer_state(self, notification: dict) -> None:
-        params = notification.get("params")
-        if not isinstance(params, list) or not params:
-            return
-        if not isinstance(params[0], dict):
-            return
-
-        incoming = params[0]
-
-        with self._cache_lock:
-            # Debug log of raw toolhead payload (single line to reduce spam)
-            if "toolhead" in incoming:
-                try:
-                    print(
-                        "[MoonrakerWS] toolhead notify",
-                        json.dumps(incoming.get("toolhead", {}), sort_keys=True),
-                    )
-                except Exception:
-                    pass
-
-            # Merge top-level state, with deep merge for toolhead to avoid losing fields
-            for key, value in incoming.items():
-                if key == "toolhead" and isinstance(value, dict):
-                    existing = self._printer_state.get("toolhead")
-                    if isinstance(existing, dict):
-                        merged = existing.copy()
-                        merged.update(value)
-                        self._printer_state["toolhead"] = merged
-                    else:
-                        self._printer_state["toolhead"] = value
-                else:
-                    self._printer_state[key] = value
-
-            self._printer_status_time = time.time()
-            self._refresh_motion_queue_state()
-
-    def _refresh_motion_queue_state(self) -> None:
-        toolhead = self._printer_state.get("toolhead")
-        if isinstance(toolhead, dict):
-            raw_pt = toolhead.get("print_time")
-            raw_ept = toolhead.get("estimated_print_time")
-            if isinstance(raw_pt, (int, float)):
-                self._toolhead_print_time = float(raw_pt)
-            if isinstance(raw_ept, (int, float)):
-                self._toolhead_estimated_print_time = float(raw_ept)
-
-        pt = self._toolhead_print_time
-        ept = self._toolhead_estimated_print_time
-
-        if pt is None or ept is None:
-            # Unknown until both are seen at least once
-            self._motion_queue_empty = None
-            return
-
-        diff = ept - pt
-        # Queue is busy only when estimated_print_time is significantly ahead of print_time
-        # Negative diff (print_time > estimated) is an async update artifact, treat as empty
-        if diff > self._motion_epsilon:
-            self._motion_queue_empty = False
-        else:
-            self._motion_queue_empty = True
-
-    @property
-    def cached_printer_state(self) -> Mapping[str, Any]:
-        with self._cache_lock:
-            return dict(self._printer_state)
-
-    @property
-    def printer_status_time(self) -> Optional[float]:
-        with self._cache_lock:
-            return self._printer_status_time
+            ws.send(json.dumps(msg))
+            print(f"[WS] SENT: {gcode}")
 
     # --------------------------------------------------------
     # Notification Registration
@@ -418,11 +228,8 @@ class MoonrakerWSClient:
                     pending.finish(response=msg)
                 continue
 
-            # Notification
+            # Notification dispatch
             if isinstance(msg, dict) and "method" in msg:
-                if isinstance(msg.get("params"), list):
-                    self._update_printer_state(msg)
-
                 with self._notifier_lock:
                     handler = self._notif_handlers.get(msg["method"])
 

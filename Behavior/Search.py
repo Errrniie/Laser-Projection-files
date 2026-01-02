@@ -1,9 +1,9 @@
 import threading
 from Motion.Move import safe_move_and_wait
-from Motion.Moonraker_ws import MoonrakerWSClient
+from Motion.Moonraker_ws_v2 import MoonrakerWSClient
 
 # --- Search Constants ---
-SEARCH_SPEED = 50
+SEARCH_SPEED = 200
 
 class SearchThread(threading.Thread):
     def __init__(self, ws_client: MoonrakerWSClient, *args, **kwargs):

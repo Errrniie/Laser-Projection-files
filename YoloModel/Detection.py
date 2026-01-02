@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-CONF_THRESH = 0.8
+CONF_THRESH = 0.6
 MODEL_PATH = "yolov8n.pt"
 DEVICE = "cuda"
 

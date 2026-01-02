@@ -1,199 +1,273 @@
+# Distance/Main.py
+"""
+Main entry point for the Distance Calibration System.
+Provides a calibration manager for creating, listing, and testing calibrations.
+"""
 
-import time
 import sys
 import os
-import cv2
-import csv
 
 # Adjust the Python path to include the root directory of the project
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from Distance.YoloInterface import start_vision, stop_vision, detect_human_live
-from Distance.Model import load_model, get_distance
-from Distance.Storage import load_calibration_data, save_calibration_data
+from Distance.Storage import (
+    list_calibrations, get_calibration, get_calibration_points,
+    delete_calibration, get_test_results
+)
+from Distance.Model import load_model
+from Distance.Calibration import run_video_calibration, run_legacy_calibration
+from Distance.Test import run_video_test, test_model_live
 
-# --- Constants ---
-# Generate distances from 15 to 70 feet, inclusive, in 5-foot increments
-KNOWN_DISTANCES = list(range(15, 75, 5))
 
-def run_calibration():
-    """Runs the camera calibration process using mouse clicks."""
-    print("Starting calibration process...")
-    print("Click on the ground at the specified distances.")
-    print("Press 'ESC' to quit.")
+def print_header():
+    """Print the application header."""
+    print("\n" + "="*60)
+    print("   DISTANCE CALIBRATION MANAGER")
+    print("="*60)
 
-    calibration = []
+
+def print_menu():
+    """Print the main menu."""
+    print("\nOptions:")
+    print("  [1] List all calibrations")
+    print("  [2] Create new video calibration")
+    print("  [3] Create new live camera calibration (legacy)")
+    print("  [4] Test a calibration (video)")
+    print("  [5] Test a calibration (live camera)")
+    print("  [6] View calibration details")
+    print("  [7] View test results")
+    print("  [8] Delete a calibration")
+    print("  [Q] Quit")
+    print("-"*40)
+
+
+def list_all_calibrations():
+    """List all available calibrations."""
+    calibrations = list_calibrations()
     
-    # Attempt to open the camera
-    cap = cv2.VideoCapture(3)
-    if not cap.isOpened():
-        print("Could not open camera at index 4, trying index 0.")
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("Error: Could not open any video stream.")
-            return
+    print("\n" + "-"*60)
+    print("AVAILABLE CALIBRATIONS")
+    print("-"*60)
+    
+    if not calibrations:
+        print("No calibrations found.")
+        print("Use option [2] or [3] to create a new calibration.")
+    else:
+        print(f"{'#':<4} {'Name':<20} {'Zoom':<10} {'Points':<8} {'Type':<12}")
+        print("-"*60)
+        for i, cal in enumerate(calibrations, 1):
+            print(f"{i:<4} {cal['name']:<20} {cal['zoom_label']:<10} "
+                  f"{cal['num_points']:<8} {cal['source_type']:<12}")
+    
+    print("-"*60)
+    return calibrations
 
-    last_click = None
-    frame_w, frame_h = None, None
 
-    def mouse_cb(event, x, y, flags, param):
-        nonlocal last_click
-        if event == cv2.EVENT_LBUTTONDOWN:
-            if len(calibration) < len(KNOWN_DISTANCES):
-                d = KNOWN_DISTANCES[len(calibration)]
-                calibration.append((y, d))
-                last_click = (x, y)
-                print(f"Captured y={y} at distance={d} ft")
+def select_calibration(prompt="Select calibration number"):
+    """Helper to select a calibration from the list."""
+    calibrations = list_all_calibrations()
+    
+    if not calibrations:
+        return None
+    
+    try:
+        choice = int(input(f"\n{prompt} (0 to cancel): ").strip())
+        if choice == 0:
+            return None
+        if 1 <= choice <= len(calibrations):
+            return calibrations[choice - 1]["name"]
+        print("Invalid selection.")
+        return None
+    except ValueError:
+        print("Invalid input.")
+        return None
 
-    cv2.namedWindow("Calibrate Distance")
-    cv2.setMouseCallback("Calibrate Distance", mouse_cb)
 
-    while cap.isOpened() and len(calibration) < len(KNOWN_DISTANCES):
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        if frame_w is None:
-            frame_h, frame_w = frame.shape[:2]
-
-        # Draw center line and last click
-        cv2.line(frame, (frame_w // 2, 0), (frame_w // 2, frame_h), (200, 200, 200), 1)
-        if last_click: cv2.circle(frame, last_click, 5, (0, 0, 255), -1)
-
-        # Display instructions
-        idx = len(calibration)
-        label = f"Click ground point at {KNOWN_DISTANCES[idx]} ft" if idx < len(KNOWN_DISTANCES) else "Calibration complete!"
-        cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
-
-        cv2.imshow("Calibrate Distance", frame)
-        if cv2.waitKey(1) & 0xFF in [27, ord('q')]: # ESC or 'q'
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-    if calibration:
-        print("\nSaving calibration data...")
-        save_calibration_data(calibration)
-
-def save_comparison_data(data):
-    """Saves the real vs. estimated distance data to a CSV file."""
-    if not data:
-        print("No comparison data to save.")
+def view_calibration_details():
+    """View detailed information about a calibration."""
+    cal_name = select_calibration("Select calibration to view")
+    if not cal_name:
         return
     
-    filename = "distance_comparison.csv"
-    print(f"Saving comparison data to {filename}...")
-    try:
-        with open(filename, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["RealDistance", "EstimatedDistance", "PercentageError"])
-            for row in data:
-                real_dist, est_dist = row
-                if real_dist != 0:
-                    error = ((est_dist - real_dist) / real_dist) * 100
-                else:
-                    error = float('inf') # Avoid division by zero
-                writer.writerow([real_dist, f"{est_dist:.2f}", f"{error:.2f}%"])
-        print("Save complete.")
-    except IOError as e:
-        print(f"Error saving comparison data: {e}")
-
-def test_model():
-    """Tests the loaded distance model with live YOLO detection and logs comparisons."""
-    print("\nStarting distance estimation test...")
-    start_vision()
+    cal = get_calibration(cal_name)
+    if not cal:
+        print(f"Calibration '{cal_name}' not found.")
+        return
     
-    comparison_data = []
-    dist_idx = 0
+    print("\n" + "="*60)
+    print(f"CALIBRATION: {cal_name}")
+    print("="*60)
     
-    cv2.namedWindow("Distance Test")
+    print("\nMetadata:")
+    metadata = cal.get("metadata", {})
+    print(f"  Source Type: {metadata.get('source_type', 'unknown')}")
+    print(f"  Source Path: {metadata.get('source_path', 'N/A')}")
+    print(f"  Zoom Label:  {metadata.get('zoom_label', 'unknown')}")
+    
+    resolution = metadata.get("resolution", {})
+    print(f"  Resolution:  {resolution.get('width', 'N/A')}x{resolution.get('height', 'N/A')}")
+    print(f"  FPS:         {metadata.get('fps', 'N/A')}")
+    print(f"  Created:     {cal.get('created_at', 'unknown')}")
+    
+    print("\nCalibration Points:")
+    points = cal.get("calibration_points", [])
+    print(f"  {'Y-Pixel':<12} {'Distance (ft)':<15}")
+    print("  " + "-"*27)
+    for y, dist in points:
+        print(f"  {y:<12} {dist:<15}")
+    
+    print("\nTest Results Summary:")
+    results = cal.get("test_results", [])
+    if results:
+        avg_error = sum(abs(r.get("error_percent", 0)) for r in results) / len(results)
+        print(f"  Total tests: {len(results)}")
+        print(f"  Avg error:   {avg_error:.2f}%")
+    else:
+        print("  No test results recorded.")
+    
+    print("="*60)
 
-    try:
-        while dist_idx < len(KNOWN_DISTANCES):
-            real_distance = KNOWN_DISTANCES[dist_idx]
-            print(f"\nPosition the person at {real_distance} ft.")
-            print("Press 'e' to record the estimated distance.")
-            print("Press 'n' to move to the next distance.")
-            print("Press 'q' to quit.")
+
+def view_test_results():
+    """View test results for a calibration."""
+    cal_name = select_calibration("Select calibration to view results")
+    if not cal_name:
+        return
+    
+    results = get_test_results(cal_name)
+    
+    print("\n" + "="*60)
+    print(f"TEST RESULTS: {cal_name}")
+    print("="*60)
+    
+    if not results:
+        print("No test results recorded.")
+        print("="*60)
+        return
+    
+    print(f"{'#':<4} {'Known':>10} {'Estimated':>12} {'Error':>10} {'Frame':>8} {'Timestamp':<20}")
+    print("-"*70)
+    
+    total_error = 0
+    for i, r in enumerate(results, 1):
+        known = r.get("known_distance", 0)
+        est = r.get("estimated_distance", 0)
+        error = r.get("error_percent", 0)
+        frame = r.get("frame_number", "N/A")
+        timestamp = r.get("timestamp", "N/A")[:19]  # Trim to readable length
+        
+        print(f"{i:<4} {known:>10.1f} {est:>12.2f} {error:>9.1f}% {frame:>8} {timestamp:<20}")
+        total_error += abs(error)
+    
+    avg_error = total_error / len(results)
+    print("-"*70)
+    print(f"Average absolute error: {avg_error:.2f}%")
+    print(f"Total test points: {len(results)}")
+    print("="*60)
+
+
+def delete_calibration_interactive():
+    """Interactively delete a calibration."""
+    cal_name = select_calibration("Select calibration to DELETE")
+    if not cal_name:
+        return
+    
+    confirm = input(f"Are you sure you want to delete '{cal_name}'? (yes/no): ").strip().lower()
+    if confirm == "yes":
+        if delete_calibration(cal_name):
+            print(f"Calibration '{cal_name}' deleted.")
+        else:
+            print("Failed to delete calibration.")
+    else:
+        print("Deletion cancelled.")
+
+
+def test_video_interactive():
+    """Interactively test a calibration with video."""
+    cal_name = select_calibration("Select calibration to test")
+    if not cal_name:
+        return
+    
+    cal = get_calibration(cal_name)
+    default_video = cal.get("metadata", {}).get("source_path") if cal else None
+    
+    print(f"\nDefault video: {default_video or 'None'}")
+    video_input = input("Enter video path (or press Enter for default): ").strip()
+    
+    video_path = video_input if video_input else default_video
+    
+    if not video_path:
+        print("No video path available. Please specify a video file.")
+        video_path = input("Video path: ").strip()
+        if not video_path:
+            return
+    
+    run_video_test(cal_name, video_path)
+
+
+def test_live_interactive():
+    """Interactively test a calibration with live camera."""
+    cal_name = select_calibration("Select calibration to test")
+    if not cal_name:
+        return
+    
+    points = get_calibration_points(cal_name)
+    if not points or len(points) < 2:
+        print("Calibration has insufficient points.")
+        return
+    
+    load_model(points)
+    test_model_live()
+
+
+def main():
+    """Main entry point."""
+    print_header()
+    
+    while True:
+        print_menu()
+        
+        try:
+            choice = input("Enter choice: ").strip().lower()
             
-            while True:
-                human, _, bbox, _, frame, feet_center = detect_human_live()
+            if choice == '1':
+                list_all_calibrations()
+            
+            elif choice == '2':
+                run_video_calibration()
+            
+            elif choice == '3':
+                run_legacy_calibration()
+            
+            elif choice == '4':
+                test_video_interactive()
+            
+            elif choice == '5':
+                test_live_interactive()
+            
+            elif choice == '6':
+                view_calibration_details()
+            
+            elif choice == '7':
+                view_test_results()
+            
+            elif choice == '8':
+                delete_calibration_interactive()
+            
+            elif choice == 'q':
+                print("\nExiting. Goodbye!")
+                break
+            
+            else:
+                print("Invalid choice. Please try again.")
+        
+        except KeyboardInterrupt:
+            print("\n\nExiting. Goodbye!")
+            break
+        except Exception as e:
+            print(f"\nError: {e}")
+            print("Please try again.")
 
-                if frame is not None:
-                    vis = frame.copy()
-                    
-                    # Draw bounding box
-                    if bbox:
-                        x1, y1, x2, y2 = bbox
-                        cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    
-                    # Draw feet center and display distance
-                    if human and feet_center:
-                        estimated_distance = get_distance(feet_center[1])
-                        dist_text = f"Est. Distance: {estimated_distance:.2f} ft"
-                        cv2.drawMarker(vis, feet_center, (0, 0, 255), cv2.MARKER_STAR, 20, 2)
-                        cv2.putText(vis, dist_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                    
-                    # Display current real distance
-                    real_dist_text = f"Real Distance: {real_distance} ft"
-                    cv2.putText(vis, real_dist_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                    
-                    cv2.imshow("Distance Test", vis)
-
-                key = cv2.waitKey(1) & 0xFF
-
-                if key == ord('e'):
-                    if human and feet_center:
-                        estimated_distance = get_distance(feet_center[1])
-                        comparison_data.append([real_distance, estimated_distance])
-                        error = ((estimated_distance - real_distance) / real_distance) * 100
-                        print(f"  Recorded: Real={real_distance} ft, Est={estimated_distance:.2f} ft, Error={error:.2f}%")
-                    else:
-                        print("  Cannot record: No person detected.")
-                
-                elif key == ord('n'):
-                    dist_idx += 1
-                    break # Breaks inner loop to move to the next distance
-                
-                elif key in [ord('q'), 27]: # q or ESC
-                    dist_idx = len(KNOWN_DISTANCES) # End the outer loop
-                    break
-
-    except KeyboardInterrupt:
-        print("\nTest interrupted by user.")
-    finally:
-        print("\nStopping vision system...")
-        stop_vision()
-        cv2.destroyAllWindows()
-        save_comparison_data(comparison_data)
 
 if __name__ == "__main__":
-    calibration_data = load_calibration_data()
-
-    def run_test_after_calibration():
-        new_data = load_calibration_data()
-        if new_data:
-            print("\nCalibration complete. Loading model and starting test...")
-            load_model(new_data)
-            test_model()
-        else:
-            print("\nCould not load new calibration data. Exiting.")
-
-    if not calibration_data:
-        print("No calibration data found.")
-        run_calibration()
-        run_test_after_calibration()
-    else:
-        while True:
-            choice = input("Calibration data found. Run new calibration (c) or start test (t)? ").lower()
-            if choice == 'c':
-                run_calibration()
-                run_test_after_calibration()
-                break
-            elif choice == 't':
-                load_model(calibration_data)
-                test_model()
-                break
-            else:
-                print("Invalid choice. Please enter 'c' or 't'.")
+    main()

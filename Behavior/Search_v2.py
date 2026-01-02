@@ -1,60 +1,53 @@
 from dataclasses import dataclass, field
-import time
 
 
 @dataclass
 class SearchConfig:
-    min_angle: float  # degrees
-    max_angle: float  # degrees
-    start_angle: float  # degrees
-    angular_velocity: float = 10.0  # degrees per second
-    max_angular_velocity: float = 10  # hard cap deg/s
+    """Search pattern configuration. All units in mm."""
+    min_z: float = 0.0       # mm (Z_MIN)
+    max_z: float = 20.0      # mm (Z_MAX)
+    start_z: float = 10.0    # mm (starting position)
+    step_size: float = 1.0   # mm per step
     initial_direction: int = field(default=1)  # +1 for up, -1 for down
 
 
 class SearchController:
     """
-    Time-based angular search pattern.
-    Outputs angular offset in degrees, independent of loop frequency.
+    Step-based search pattern.
+    Outputs relative Z delta in mm for each step.
+    Waits for motion completion before returning next step.
+    Pattern: start_z → max_z → min_z → max_z (repeating)
     """
 
     def __init__(self, config: SearchConfig):
         self._config = config
-        self._current_angle: float = config.start_angle
+        self._current_z: float = config.start_z
         self._direction: int = config.initial_direction
-        self._last_update_time: float = time.monotonic()
-        # Clamp velocity to hard cap
-        self._velocity = min(config.angular_velocity, config.max_angular_velocity)
+        self._step_size: float = config.step_size
 
     def reset(self) -> None:
-        self._current_angle = self._config.start_angle
+        self._current_z = self._config.start_z
         self._direction = self._config.initial_direction
-        self._last_update_time = time.monotonic()
 
     def update(self) -> dict:
         """
-        Compute next angular position based on elapsed wall-clock time.
-        Returns {"angle": float} in degrees.
-        Time-deterministic: works correctly at any loop frequency.
+        Compute next step delta.
+        Returns {"z_delta": float} in mm.
+        Called once per motion cycle - caller must wait for completion before calling again.
         """
-        now = time.monotonic()
-        dt = now - self._last_update_time
-        self._last_update_time = now
-
-        # Clamp dt to avoid huge jumps on stall (max 100ms)
-        dt = min(dt, 0.1)
-
-        # Advance angle
-        delta = self._velocity * dt * self._direction
-        next_angle = self._current_angle + delta
+        # Compute next position
+        delta = self._step_size * self._direction
+        next_z = self._current_z + delta
 
         # Bounce at bounds
-        if next_angle > self._config.max_angle:
-            next_angle = self._config.max_angle
+        if next_z >= self._config.max_z:
+            next_z = self._config.max_z
+            delta = next_z - self._current_z
             self._direction = -1
-        elif next_angle < self._config.min_angle:
-            next_angle = self._config.min_angle
+        elif next_z <= self._config.min_z:
+            next_z = self._config.min_z
+            delta = next_z - self._current_z
             self._direction = 1
 
-        self._current_angle = next_angle
-        return {"angle": next_angle}
+        self._current_z = next_z
+        return {"z_delta": delta, "z_absolute": next_z}

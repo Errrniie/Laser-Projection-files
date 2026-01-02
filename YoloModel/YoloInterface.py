@@ -5,20 +5,41 @@ from YoloModel.CameraThread import CameraThread
 import cv2
 import threading
 import queue
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+# =============================================================================
+# Shared Vision State (latest-state model, not a queue)
+# =============================================================================
+
+@dataclass
+class VisionState:
+    """Latest detection result. Overwritten continuously by vision thread."""
+    timestamp: float = 0.0
+    has_target: bool = False
+    bbox_center: Optional[Tuple[int, int]] = None
+    bbox: Optional[Tuple[int, int, int, int]] = None
+    confidence: float = 0.0
+
+
+# Thread-safe latest state
+_vision_state = VisionState()
+_vision_state_lock = threading.Lock()
+
+# Staleness threshold: detections older than this are considered invalid
+STALENESS_THRESHOLD_S = 0.5
 
 # --- Globals ---
 camera = None
 _display_thread = None
 _vision_thread = None
 _display_queue = queue.Queue(maxsize=1)
-_vision_queue = queue.Queue(maxsize=1)
 
 # --- Stop Events ---
 _stop_event = threading.Event()
 
 # --- Constants ---
 _WINDOW_NAME = "Goose Vision"
-_VISION_LOOP_INTERVAL = 0.05  # Process frames at 10Hz
 
 def start_vision():
     """Initializes and starts all vision-related threads."""
@@ -65,30 +86,34 @@ def stop_vision():
 
 def _vision_worker():
     """
-    Dedicated thread for running object detection at a controlled rate.
+    Dedicated thread for running object detection continuously.
+    Runs as fast as CUDA allows - no artificial rate limiting.
+    Overwrites shared state on every frame.
     """
+    global _vision_state
+    
     while not _stop_event.is_set():
-        loop_start_time = time.time()
-
         frame = camera.get_frame()
         if frame is None:
-            time.sleep(0.01)
+            time.sleep(0.005)
             continue
         
-        # --- This is the expensive operation ---
+        # --- YOLO inference (runs at full CUDA speed) ---
         human, center, bbox, conf = detect_human(frame)
         
+        # --- Update shared state (atomic overwrite) ---
+        with _vision_state_lock:
+            _vision_state.timestamp = time.time()
+            _vision_state.has_target = human
+            _vision_state.bbox_center = center
+            _vision_state.bbox = bbox
+            _vision_state.confidence = conf
+        
+        # --- Push to display (non-blocking) ---
         try:
-            # Put the full results packet into the queue
-            _vision_queue.put_nowait((human, center, bbox, conf, frame))
+            _display_queue.put_nowait((frame, bbox, conf))
         except queue.Full:
-            pass # Discard if the main loop is not keeping up
-
-        # --- Rate-limit the loop to free up CPU ---
-        elapsed_time = time.time() - loop_start_time
-        sleep_time = _VISION_LOOP_INTERVAL - elapsed_time
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+            pass
 
 def _display_worker():
     """Separate thread handles all visualization"""
@@ -117,12 +142,56 @@ def _display_worker():
             if _stop_event.is_set():
                 break
 
+
+# =============================================================================
+# Public API - Latest State Model (no queues, no blocking)
+# =============================================================================
+
+def get_latest_detection() -> VisionState:
+    """
+    Non-blocking read of the latest detection state.
+    
+    Returns a copy of the current VisionState.
+    Automatically applies staleness check: if detection is older than
+    STALENESS_THRESHOLD_S, returns has_target=False.
+    
+    Usage in Main.py:
+        state = get_latest_detection()
+        if state.has_target:
+            cx, cy = state.bbox_center
+            # use detection
+    """
+    with _vision_state_lock:
+        # Copy current state
+        state = VisionState(
+            timestamp=_vision_state.timestamp,
+            has_target=_vision_state.has_target,
+            bbox_center=_vision_state.bbox_center,
+            bbox=_vision_state.bbox,
+            confidence=_vision_state.confidence,
+        )
+    
+    # Apply staleness check
+    age = time.time() - state.timestamp
+    if age > STALENESS_THRESHOLD_S:
+        state.has_target = False
+        state.bbox_center = None
+        state.bbox = None
+        state.confidence = 0.0
+    
+    return state
+
+
 def detect_human_live():
-    """Non-blocking call to get the latest detection result."""
-    try:
-        return _vision_queue.get_nowait()
-    except queue.Empty:
-        return False, None, None, 0.0, None
+    """
+    Legacy API - kept for backward compatibility.
+    Returns (has_target, bbox_center, bbox, confidence, None).
+    
+    Note: frame is no longer returned (always None) since vision runs independently.
+    """
+    state = get_latest_detection()
+    return state.has_target, state.bbox_center, state.bbox, state.confidence, None
+
 
 def show_frame(frame, bbox=None, conf=None):
     """Non-blocking frame display."""

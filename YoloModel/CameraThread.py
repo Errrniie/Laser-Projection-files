@@ -3,7 +3,7 @@ import threading
 import time
 
 class CameraThread:
-    def __init__(self, index=0, width=640, height=480, fps=30):
+    def __init__(self, index=0, width=1080, height=720, fps=30):
         self.cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)

@@ -2,6 +2,8 @@ import math
 import time
 
 from Motion.Moonraker_ws_v2 import MoonrakerWSClient
+from Motion.Home import home
+from Laser.LaserEnable import LaserController
 
 # =========================
 # USER SETTINGS
@@ -31,14 +33,42 @@ def down_angle_deg(distance_ft: float, height_ft: float) -> float:
 def main():
     ws = MoonrakerWSClient(MOONRAKER_WS_URL)
     ws.connect()
+    
+    # Initialize laser controller
+    laser = LaserController()
+    
+    print("=" * 60)
+    print("LASER AIM TEST SYSTEM")
+    print("=" * 60)
+    
+    # Step 1: Home the motors
+    print("\n[1/2] Homing motors...")
+    try:
+        home(ws, timeout=30.0)
+        print("✓ Homing complete!")
+    except Exception as e:
+        print(f"✗ Homing failed: {e}")
+        ws.close()
+        return
+    
+    # Step 2: Turn on the laser
+    print("\n[2/2] Turning laser ON...")
+    if laser.turn_on():
+        print("✓ Laser is ON and ready!")
+    else:
+        print("✗ Failed to turn on laser")
+        ws.close()
+        return
 
     # We track commanded Y ourselves because your move path is RELATIVE.
     current_y = NEUTRAL_Y
 
-    print("Connected.")
+    print("\n" + "=" * 60)
+    print("System Ready!")
     print(f"Camera height: {CAMERA_HEIGHT_FT} ft")
     print(f"Neutral Y: {NEUTRAL_Y} (units: ~beam-deg)")
     print("NOTE: Sending RELATIVE Y deltas only. X untouched.")
+    print("=" * 60)
 
     # Optional: move to neutral by relative delta from "wherever you are now"
     # If you want this to be deterministic, you must home first outside this script.
@@ -76,8 +106,13 @@ def main():
 
         time.sleep(0.05)
 
+    # Cleanup: turn off laser before exiting
+    print("\n" + "=" * 60)
+    print("Shutting down...")
+    laser.turn_off()
     ws.close()
-    print("Disconnected.")
+    print("Disconnected. Laser turned OFF.")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()

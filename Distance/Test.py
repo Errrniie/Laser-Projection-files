@@ -304,6 +304,212 @@ def run_video_test(calibration_name, video_path=None):
 import cv2
 
 
+class DetectionCoverageAnalyzer:
+    """
+    Analyzes detection coverage in a video.
+    Measures what percentage of the video has a human detected by YOLO.
+    Independent of calibration/distance estimation.
+    """
+
+    def __init__(self, video_path, show_overlay=True):
+        """
+        Initialize the analyzer.
+        
+        Args:
+            video_path: Path to the video file to analyze
+            show_overlay: Whether to show live overlay during analysis
+        """
+        if not os.path.isfile(video_path):
+            raise ValueError(f"Video file not found: {video_path}")
+        
+        self.video_path = video_path
+        self.show_overlay = show_overlay
+        self.video = None
+        
+        # Stats
+        self.total_frames = 0
+        self.detected_frames = 0
+        self.current_frame_num = 0
+    
+    def _draw_analysis_overlay(self, frame):
+        """Draw analysis progress overlay on frame."""
+        h, w = frame.shape[:2]
+        
+        # Calculate current stats
+        percent = (self.detected_frames / max(1, self.current_frame_num)) * 100
+        progress = (self.current_frame_num / max(1, self.total_frames)) * 100
+        
+        # Draw semi-transparent background for stats
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (10, 10), (350, 130), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+        
+        # Draw title
+        cv2.putText(frame, "DETECTION COVERAGE ANALYSIS", (20, 35),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+        
+        # Draw stats
+        cv2.putText(frame, f"Frame: {self.current_frame_num}/{self.total_frames}", (20, 60),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"Detected Frames: {self.detected_frames}", (20, 80),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"Detection Rate: {percent:.1f}%", (20, 100),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        
+        # Draw progress bar
+        bar_y = 115
+        bar_width = 320
+        cv2.rectangle(frame, (20, bar_y), (20 + bar_width, bar_y + 10), (50, 50, 50), -1)
+        fill_width = int(bar_width * (progress / 100))
+        cv2.rectangle(frame, (20, bar_y), (20 + fill_width, bar_y + 10), (0, 200, 0), -1)
+        cv2.rectangle(frame, (20, bar_y), (20 + bar_width, bar_y + 10), (255, 255, 255), 1)
+        
+        # Draw quit hint
+        cv2.putText(frame, "[Q] Cancel analysis", (w - 180, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+        
+        return frame
+    
+    def run(self):
+        """
+        Run the detection coverage analysis.
+        
+        Returns:
+            Dictionary with analysis results or None if cancelled/error
+        """
+        self.video = VideoHandler(self.video_path)
+        
+        if not self.video.open():
+            return None
+        
+        self.total_frames = self.video.total_frames
+        self.detected_frames = 0
+        self.current_frame_num = 0
+        
+        window_name = "Detection Coverage Analysis"
+        if self.show_overlay:
+            cv2.namedWindow(window_name)
+        
+        print("\n" + "="*60)
+        print("DETECTION COVERAGE ANALYSIS")
+        print("="*60)
+        print(f"Video: {self.video_path}")
+        print(f"Total frames: {self.total_frames}")
+        print(f"FPS: {self.video.fps:.1f}")
+        print("-"*60)
+        print("Analyzing... Press [Q] to cancel.")
+        print("-"*60)
+        
+        cancelled = False
+        
+        try:
+            # Process all frames sequentially
+            while self.current_frame_num < self.total_frames:
+                # Read frame directly without playback timing
+                if not self.video._read_next_frame():
+                    break
+                
+                frame = self.video.current_frame
+                if frame is None:
+                    break
+                
+                self.current_frame_num = self.video.frame_number
+                
+                # Run YOLO detection
+                human, center, bbox, conf = detect_human(frame)
+                
+                if human:
+                    self.detected_frames += 1
+                
+                # Show overlay if enabled
+                if self.show_overlay:
+                    vis_frame = frame.copy()
+                    
+                    # Draw detection box if present
+                    if bbox is not None:
+                        x1, y1, x2, y2 = bbox
+                        cv2.rectangle(vis_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        cv2.putText(vis_frame, f"Human: {conf:.2f}", (x1, y1 - 10),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+                    
+                    # Draw overlay
+                    vis_resized, _ = resize_for_display(vis_frame, max_width=1280, max_height=720)
+                    vis_resized = self._draw_analysis_overlay(vis_resized)
+                    
+                    cv2.imshow(window_name, vis_resized)
+                    
+                    # Check for cancel key (non-blocking)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q') or key == ord('Q') or key == 27:
+                        cancelled = True
+                        print("\nAnalysis cancelled by user.")
+                        break
+                
+                # Print progress every 100 frames
+                if self.current_frame_num % 100 == 0:
+                    percent = (self.detected_frames / max(1, self.current_frame_num)) * 100
+                    print(f"  Frame {self.current_frame_num}/{self.total_frames} - Detection rate: {percent:.1f}%")
+        
+        finally:
+            self.video.close()
+            if self.show_overlay:
+                cv2.destroyAllWindows()
+        
+        if cancelled:
+            return None
+        
+        # Calculate final results
+        percent_detected = (self.detected_frames / max(1, self.total_frames)) * 100
+        
+        results = {
+            "total_frames": self.total_frames,
+            "detected_frames": self.detected_frames,
+            "percent_detected": round(percent_detected, 2),
+            "video_path": self.video_path,
+            "video_fps": self.video.fps
+        }
+        
+        # Print final summary
+        print("\n" + "="*60)
+        print("ANALYSIS COMPLETE")
+        print("="*60)
+        print(f"Total frames processed: {results['total_frames']}")
+        print(f"Frames with detection:  {results['detected_frames']}")
+        print(f"Detection coverage:     {results['percent_detected']:.1f}%")
+        print("="*60 + "\n")
+        
+        return results
+
+
+def run_detection_coverage_analysis(video_path, calibration_name=None, show_overlay=True, save_results=True):
+    """
+    Run detection coverage analysis on a video file.
+    
+    Args:
+        video_path: Path to the video file
+        calibration_name: Optional calibration name to store results under
+        show_overlay: Whether to show live overlay during analysis
+        save_results: Whether to save results to storage (requires calibration_name)
+    
+    Returns:
+        Dictionary with analysis results or None if failed/cancelled
+    """
+    try:
+        analyzer = DetectionCoverageAnalyzer(video_path, show_overlay=show_overlay)
+        results = analyzer.run()
+        
+        if results and save_results and calibration_name:
+            from Distance.Storage import save_detection_coverage
+            if save_detection_coverage(calibration_name, results):
+                print(f"Detection coverage saved to calibration '{calibration_name}'.")
+        
+        return results
+    
+    except ValueError as e:
+        print(f"Error: {e}")
+        return None
+
+
 # --- Legacy functions for backward compatibility ---
 
 def test_model_live():

@@ -288,3 +288,45 @@ def load_calibration_data():
     # Return first available
     first_name = next(iter(calibrations))
     return calibrations[first_name].get("calibration_points", [])
+
+
+# --- Detection Coverage API ---
+
+def save_detection_coverage(calibration_name, coverage_data):
+    """
+    Save detection coverage analysis results to a calibration.
+    
+    Args:
+        calibration_name: Name of the calibration to store results under
+        coverage_data: Dict with total_frames, detected_frames, percent_detected, etc.
+    
+    Returns:
+        True on success, False on failure
+    """
+    storage = _load_storage()
+    
+    if calibration_name not in storage.get("calibrations", {}):
+        print(f"Calibration '{calibration_name}' not found.")
+        return False
+    
+    # Add timestamp and store
+    coverage_data["timestamp"] = datetime.now().isoformat()
+    storage["calibrations"][calibration_name]["detection_coverage"] = coverage_data
+    
+    return _save_storage(storage)
+
+
+def get_detection_coverage(calibration_name):
+    """
+    Get detection coverage data for a calibration.
+    
+    Args:
+        calibration_name: Name of the calibration
+    
+    Returns:
+        Detection coverage dictionary or None if not found
+    """
+    cal = get_calibration(calibration_name)
+    if cal:
+        return cal.get("detection_coverage")
+    return None

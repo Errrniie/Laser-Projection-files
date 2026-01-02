@@ -12,11 +12,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from Distance.Storage import (
     list_calibrations, get_calibration, get_calibration_points,
-    delete_calibration, get_test_results
+    delete_calibration, get_test_results, get_detection_coverage
 )
 from Distance.Model import load_model
 from Distance.Calibration import run_video_calibration, run_legacy_calibration
-from Distance.Test import run_video_test, test_model_live
+from Distance.Test import run_video_test, test_model_live, run_detection_coverage_analysis
 
 
 def print_header():
@@ -37,6 +37,7 @@ def print_menu():
     print("  [6] View calibration details")
     print("  [7] View test results")
     print("  [8] Delete a calibration")
+    print("  [9] Analyze detection coverage (video)")
     print("  [Q] Quit")
     print("-"*40)
 
@@ -124,6 +125,17 @@ def view_calibration_details():
         print(f"  Avg error:   {avg_error:.2f}%")
     else:
         print("  No test results recorded.")
+    
+    print("\nDetection Coverage:")
+    coverage = cal.get("detection_coverage")
+    if coverage:
+        print(f"  Total frames:     {coverage.get('total_frames', 'N/A')}")
+        print(f"  Detected frames:  {coverage.get('detected_frames', 'N/A')}")
+        print(f"  Coverage:         {coverage.get('percent_detected', 'N/A')}%")
+        print(f"  Analyzed:         {coverage.get('timestamp', 'N/A')[:19]}")
+    else:
+        print("  No detection coverage analysis run.")
+        print("  Use option [9] to analyze a video.")
     
     print("="*60)
 
@@ -220,6 +232,64 @@ def test_live_interactive():
     test_model_live()
 
 
+def analyze_detection_coverage_interactive():
+    """Interactively analyze detection coverage for a video."""
+    print("\n" + "-"*60)
+    print("DETECTION COVERAGE ANALYSIS")
+    print("-"*60)
+    print("This will analyze what percentage of a video contains")
+    print("detectable humans (independent of distance calibration).")
+    print("-"*60)
+    
+    # Ask if user wants to associate with a calibration
+    calibrations = list_calibrations()
+    cal_name = None
+    
+    if calibrations:
+        print("\nYou can optionally associate this analysis with a calibration")
+        print("to store the results. Otherwise, results will only be printed.")
+        print()
+        associate = input("Associate with a calibration? (y/n): ").strip().lower()
+        
+        if associate == 'y':
+            cal_name = select_calibration("Select calibration to store results")
+    
+    # Get video path
+    default_video = None
+    if cal_name:
+        cal = get_calibration(cal_name)
+        default_video = cal.get("metadata", {}).get("source_path") if cal else None
+        if default_video:
+            print(f"\nDefault video: {default_video}")
+    
+    video_input = input("Enter video path (or press Enter for default): ").strip()
+    video_path = video_input if video_input else default_video
+    
+    if not video_path:
+        print("No video path provided. Please specify a video file.")
+        video_path = input("Video path: ").strip()
+        if not video_path:
+            print("Cancelled.")
+            return
+    
+    # Ask about overlay
+    show_overlay = input("\nShow live overlay during analysis? (y/n, default=y): ").strip().lower()
+    show_overlay = show_overlay != 'n'
+    
+    # Run analysis
+    results = run_detection_coverage_analysis(
+        video_path=video_path,
+        calibration_name=cal_name,
+        show_overlay=show_overlay,
+        save_results=(cal_name is not None)
+    )
+    
+    if results:
+        print("\nAnalysis completed successfully.")
+    else:
+        print("\nAnalysis was cancelled or failed.")
+
+
 def main():
     """Main entry point."""
     print_header()
@@ -253,6 +323,9 @@ def main():
             
             elif choice == '8':
                 delete_calibration_interactive()
+            
+            elif choice == '9':
+                analyze_detection_coverage_interactive()
             
             elif choice == 'q':
                 print("\nExiting. Goodbye!")

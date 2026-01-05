@@ -2,7 +2,7 @@ from ultralytics import YOLO
 
 CONF_THRESH = 0.6
 MODEL_PATH = "yolov8n.pt"
-DEVICE = "cuda"
+DEVICE = "cpu"
 
 model = YOLO(MODEL_PATH)
 model.to(DEVICE)
@@ -18,7 +18,7 @@ def detect_human(frame):
     """
     results = model(
         frame,
-        device=0,
+        device=DEVICE,
         conf=CONF_THRESH,
         classes=[0],
         verbose=False

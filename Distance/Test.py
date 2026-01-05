@@ -63,7 +63,10 @@ class VideoTester:
         if bbox is None:
             return None
         x1, y1, x2, y2 = bbox
-        return (int((x1 + x2) / 2), y2)
+        # Ensure returned values are native Python ints (not numpy types)
+        cx = int((int(x1) + int(x2)) / 2)
+        cy = int(y2)
+        return (cx, cy)
     
     def _draw_test_overlay(self, frame, scale=1.0):
         """Draw test-specific overlay on frame (scaled for display)."""

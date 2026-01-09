@@ -11,7 +11,7 @@ import os
 # Adjust the Python path to include the root directory of the project
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from Distance.VideoHandler import VideoHandler, draw_video_controls, handle_video_key, resize_for_display
+from Distance.VideoHandler import VideoHandler, VideoControlPanel, draw_video_controls, handle_video_key, resize_for_display
 from Distance.Model import load_model, get_distance
 from Distance.Storage import (
     get_calibration, get_calibration_points, add_test_result, get_test_results
@@ -229,19 +229,28 @@ class VideoTester:
         window_name = f"Test: {self.calibration_name}"
         cv2.namedWindow(window_name)
         
+        # Track if we should quit
+        self._should_quit = False
+        
+        def on_quit():
+            self._should_quit = True
+        
+        # Create the control panel window
+        control_panel = VideoControlPanel(
+            self.video,
+            extra_text_callback=self._create_extra_text,
+            on_quit=on_quit
+        )
+        
         print("\n" + "="*60)
         print("VIDEO TEST MODE")
         print("="*60)
-        print("Controls:")
-        print("  [SPACE] - Play/Pause video")
-        print("  [<] [>] or [,] [.] - Step frame backward/forward")
-        print("  [R] - Record test point (prompts for known distance)")
-        print("  [T] - Show all test results")
-        print("  [Q] or [ESC] - Quit")
+        print("Use the Control Panel window for video navigation.")
+        print("Press [R] to record test point, [T] to show results.")
         print("="*60 + "\n")
         
         try:
-            while True:
+            while control_panel.is_running() and not self._should_quit:
                 frame = self.video.get_frame()
                 if frame is None:
                     break
@@ -261,6 +270,9 @@ class VideoTester:
                 
                 cv2.imshow(window_name, vis_resized)
                 
+                # Update control panel
+                control_panel.update()
+                
                 key = cv2.waitKey(30) & 0xFF
                 
                 # Handle video controls
@@ -276,6 +288,7 @@ class VideoTester:
                     self._show_all_results()
         
         finally:
+            control_panel.destroy()
             self.video.close()
             cv2.destroyAllWindows()
             

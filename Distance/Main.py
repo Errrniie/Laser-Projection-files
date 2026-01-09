@@ -292,6 +292,23 @@ def analyze_detection_coverage_interactive():
 
 def main():
     """Main entry point."""
+    # Check for command line arguments
+    if len(sys.argv) > 1 and sys.argv[1] in ['--terminal', '-t']:
+        # Run terminal interface
+        main_terminal()
+    else:
+        # Run GUI interface by default
+        try:
+            from Distance.GUI import run_gui
+            run_gui()
+        except ImportError as e:
+            print(f"GUI not available: {e}")
+            print("Falling back to terminal interface...")
+            main_terminal()
+
+
+def main_terminal():
+    """Terminal-based main entry point."""
     print_header()
     
     while True:

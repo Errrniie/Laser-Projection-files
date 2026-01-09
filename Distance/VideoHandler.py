@@ -6,6 +6,9 @@ Supports play/pause, step frame, and seeking.
 
 import cv2
 import time
+import tkinter as tk
+from tkinter import ttk
+import threading
 
 
 class VideoHandler:
@@ -62,7 +65,9 @@ class VideoHandler:
         ret, frame = self.cap.read()
         if ret:
             self.current_frame = frame
-            self.frame_number = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+            # CAP_PROP_POS_FRAMES returns the index of the NEXT frame to be captured
+            # So we subtract 1 to get the index of the frame we just read
+            self.frame_number = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
             return True
         return False
     
@@ -104,6 +109,8 @@ class VideoHandler:
         if not self.is_paused:
             self.is_paused = True
         
+        # frame_number is now the actual displayed frame (0-indexed)
+        # To go forward N frames, seek to frame_number + num_frames
         target_frame = min(self.frame_number + num_frames, self.total_frames - 1)
         if target_frame != self.frame_number:
             self.seek_frame(target_frame)
@@ -114,9 +121,11 @@ class VideoHandler:
         if not self.is_paused:
             self.is_paused = True
         
-        # Current frame_number is the frame we just read, so go back from there
-        target_frame = max(self.frame_number - num_frames - 1, 0)
-        self.seek_frame(target_frame)
+        # frame_number is now the actual displayed frame (0-indexed)
+        # To go backward N frames, seek to frame_number - num_frames
+        target_frame = max(self.frame_number - num_frames, 0)
+        if target_frame != self.frame_number:
+            self.seek_frame(target_frame)
         return self.current_frame
     
     def seek_frame(self, frame_num):
@@ -154,10 +163,212 @@ class VideoHandler:
         return self.cap is not None and self.cap.isOpened()
 
 
+class VideoControlPanel:
+    """
+    A separate tkinter window for video controls.
+    Provides buttons and displays for controlling video playback.
+    """
+    
+    def __init__(self, video_handler, extra_text_callback=None, on_quit=None):
+        """
+        Initialize the control panel.
+        
+        Args:
+            video_handler: VideoHandler instance to control
+            extra_text_callback: Optional callback that returns list of extra text lines
+            on_quit: Optional callback when quit is pressed
+        """
+        self.video_handler = video_handler
+        self.extra_text_callback = extra_text_callback
+        self.on_quit = on_quit
+        self.running = True
+        
+        # Create window in a separate thread-safe way
+        self.root = tk.Tk()
+        self.root.title("Video Controls")
+        self.root.geometry("380x420")
+        self.root.resizable(False, False)
+        self.root.attributes('-topmost', True)  # Keep on top
+        
+        self._create_widgets()
+        self._update_display()
+    
+    def _create_widgets(self):
+        """Create all control widgets."""
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Status section
+        status_frame = ttk.LabelFrame(main_frame, text="Status", padding="8")
+        status_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        self.status_var = tk.StringVar(value="PAUSED")
+        self.status_label = ttk.Label(status_frame, textvariable=self.status_var, 
+                                       font=('Helvetica', 14, 'bold'))
+        self.status_label.pack()
+        
+        self.frame_var = tk.StringVar(value="Frame: 0/0")
+        ttk.Label(status_frame, textvariable=self.frame_var, font=('Helvetica', 11)).pack()
+        
+        # Progress bar
+        self.progress_var = tk.DoubleVar(value=0)
+        self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, 
+                                            maximum=100, length=300)
+        self.progress_bar.pack(pady=(5, 0))
+        
+        # Extra text display (for calibration prompts, etc.)
+        self.extra_frame = ttk.LabelFrame(main_frame, text="Current Task", padding="8")
+        self.extra_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        self.extra_var = tk.StringVar(value="")
+        self.extra_label = ttk.Label(self.extra_frame, textvariable=self.extra_var,
+                                      font=('Helvetica', 11), foreground='green',
+                                      wraplength=340, justify=tk.LEFT)
+        self.extra_label.pack()
+        
+        # Playback controls
+        playback_frame = ttk.LabelFrame(main_frame, text="Playback", padding="8")
+        playback_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        # Play/Pause button
+        self.play_btn = ttk.Button(playback_frame, text="▶ Play", width=15,
+                                   command=self._toggle_play)
+        self.play_btn.pack(pady=(0, 8))
+        
+        # Navigation buttons
+        nav_frame = ttk.Frame(playback_frame)
+        nav_frame.pack()
+        
+        # Row 1: Large jumps (60 frames)
+        row1 = ttk.Frame(nav_frame)
+        row1.pack(pady=2)
+        ttk.Button(row1, text="⏪ -60", width=8, 
+                   command=lambda: self._step(-60)).pack(side=tk.LEFT, padx=2)
+        ttk.Label(row1, text="~2 sec", width=8).pack(side=tk.LEFT)
+        ttk.Button(row1, text="+60 ⏩", width=8,
+                   command=lambda: self._step(60)).pack(side=tk.LEFT, padx=2)
+        
+        # Row 2: Medium jumps (30 frames)
+        row2 = ttk.Frame(nav_frame)
+        row2.pack(pady=2)
+        ttk.Button(row2, text="⏪ -30", width=8,
+                   command=lambda: self._step(-30)).pack(side=tk.LEFT, padx=2)
+        ttk.Label(row2, text="~1 sec", width=8).pack(side=tk.LEFT)
+        ttk.Button(row2, text="+30 ⏩", width=8,
+                   command=lambda: self._step(30)).pack(side=tk.LEFT, padx=2)
+        
+        # Row 3: Small jumps (5 frames)
+        row3 = ttk.Frame(nav_frame)
+        row3.pack(pady=2)
+        ttk.Button(row3, text="◀ -5", width=8,
+                   command=lambda: self._step(-5)).pack(side=tk.LEFT, padx=2)
+        ttk.Label(row3, text="5 frames", width=8).pack(side=tk.LEFT)
+        ttk.Button(row3, text="+5 ▶", width=8,
+                   command=lambda: self._step(5)).pack(side=tk.LEFT, padx=2)
+        
+        # Row 4: Single frame
+        row4 = ttk.Frame(nav_frame)
+        row4.pack(pady=2)
+        ttk.Button(row4, text="◁ -1", width=8,
+                   command=lambda: self._step(-1)).pack(side=tk.LEFT, padx=2)
+        ttk.Label(row4, text="1 frame", width=8).pack(side=tk.LEFT)
+        ttk.Button(row4, text="+1 ▷", width=8,
+                   command=lambda: self._step(1)).pack(side=tk.LEFT, padx=2)
+        
+        # Keyboard shortcuts reference
+        kb_frame = ttk.LabelFrame(main_frame, text="Keyboard Shortcuts", padding="8")
+        kb_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        shortcuts_text = (
+            "SPACE = Play/Pause\n"
+            ", / . = -1 / +1 frame\n"
+            "A / D = -5 / +5 frames\n"
+            "J / L = -30 / +30 frames\n"
+            "; / ' = -60 / +60 frames\n"
+            "Q / ESC = Quit"
+        )
+        ttk.Label(kb_frame, text=shortcuts_text, font=('Courier', 9),
+                  justify=tk.LEFT).pack(anchor=tk.W)
+        
+        # Quit button
+        ttk.Button(main_frame, text="✕ Quit (Q)", command=self._quit,
+                   style='Accent.TButton').pack(pady=(5, 0))
+        
+        # Handle window close
+        self.root.protocol("WM_DELETE_WINDOW", self._quit)
+    
+    def _toggle_play(self):
+        """Toggle play/pause."""
+        self.video_handler.toggle_pause()
+        self._update_display()
+    
+    def _step(self, frames):
+        """Step forward or backward by specified frames."""
+        if frames > 0:
+            self.video_handler.step_forward(frames)
+        else:
+            self.video_handler.step_backward(-frames)
+        self._update_display()
+    
+    def _quit(self):
+        """Handle quit."""
+        self.running = False
+        if self.on_quit:
+            self.on_quit()
+    
+    def _update_display(self):
+        """Update the display with current state."""
+        if not self.running:
+            return
+        
+        # Update status
+        status = "▶ PLAYING" if not self.video_handler.is_paused else "⏸ PAUSED"
+        self.status_var.set(status)
+        
+        # Update play button text
+        btn_text = "⏸ Pause" if not self.video_handler.is_paused else "▶ Play"
+        self.play_btn.config(text=btn_text)
+        
+        # Update frame counter
+        frame_text = f"Frame: {self.video_handler.frame_number + 1} / {self.video_handler.total_frames}"
+        self.frame_var.set(frame_text)
+        
+        # Update progress bar
+        progress = self.video_handler.get_progress_percent()
+        self.progress_var.set(progress)
+        
+        # Update extra text
+        if self.extra_text_callback:
+            extra_lines = self.extra_text_callback()
+            if extra_lines:
+                self.extra_var.set("\n".join(extra_lines))
+            else:
+                self.extra_var.set("")
+    
+    def update(self):
+        """Process tkinter events and update display. Call this in the main loop."""
+        if self.running:
+            self._update_display()
+            self.root.update_idletasks()
+            self.root.update()
+    
+    def is_running(self):
+        """Check if the control panel is still running."""
+        return self.running
+    
+    def destroy(self):
+        """Destroy the control panel window."""
+        self.running = False
+        try:
+            self.root.destroy()
+        except:
+            pass
+
+
 def draw_video_controls(frame, video_handler, extra_text=None):
     """
-    Draw video control overlay on frame.
-    This should be called on the already-resized display frame for crisp text.
+    Draw minimal video overlay on frame (just progress bar and extra text).
+    Full controls are shown in the separate VideoControlPanel window.
     
     Args:
         frame: Frame to draw on (will be modified) - should be display-sized
@@ -170,8 +381,8 @@ def draw_video_controls(frame, video_handler, extra_text=None):
     h, w = frame.shape[:2]
     
     # Draw progress bar at bottom
-    bar_height = 16
-    bar_y = h - bar_height - 8
+    bar_height = 12
+    bar_y = h - bar_height - 5
     bar_x = 10
     bar_width = w - 20
     
@@ -186,25 +397,16 @@ def draw_video_controls(frame, video_handler, extra_text=None):
     # Border
     cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height), (255, 255, 255), 1)
     
-    # Frame counter
-    frame_text = f"Frame: {video_handler.frame_number}/{video_handler.total_frames}"
-    cv2.putText(frame, frame_text, (bar_x, bar_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    
-    # Play/Pause indicator
-    status = "PAUSED" if video_handler.is_paused else "PLAYING"
-    status_color = (0, 255, 255) if video_handler.is_paused else (0, 255, 0)
-    cv2.putText(frame, status, (w - 90, bar_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, status_color, 1, cv2.LINE_AA)
-    
-    # Control hints at top
-    controls = "[SPACE] Pause  [,/.] x1  [A/D] x5  [J/L] x30  [;/'] x60  [Q] Quit"
-    cv2.putText(frame, controls, (10, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1, cv2.LINE_AA)
-    
-    # Extra text lines
+    # Extra text lines (calibration prompts) - keep these on video
     if extra_text:
-        y_offset = 45
+        y_offset = 30
         for line in extra_text:
-            cv2.putText(frame, line, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
-            y_offset += 28
+            # Draw shadow for better visibility
+            cv2.putText(frame, line, (12, y_offset + 2), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.7, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(frame, line, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.7, (0, 255, 0), 2, cv2.LINE_AA)
+            y_offset += 30
     
     return frame
 

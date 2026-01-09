@@ -1,0 +1,845 @@
+{
+    "version": "2.0",
+    "calibrations": {
+        "UHD_3x": {
+            "name": "UHD_3x",
+            "created_at": "2026-01-02T15:27:55.916216",
+            "metadata": {
+                "fps": 29.992618560791016,
+                "total_frames": 3578,
+                "source_path": "/Users/michaelnawas/Downloads/UHD_3x.mp4",
+                "source_type": "video",
+                "zoom_label": "3x",
+                "resolution": {
+                    "width": 1080,
+                    "height": 1920
+                }
+            },
+            "distance_list": [
+                20.0,
+                40.0,
+                60.0,
+                80.0,
+                100.0,
+                120.0,
+                140.0,
+                160.0,
+                180.0,
+                200.0,
+                220.0,
+                240.0,
+                260.0,
+                280.0,
+                300.0,
+                320.0,
+                340.0,
+                360.0,
+                380.0
+            ],
+            "calibration_points": [
+                [
+                    1389,
+                    20.0
+                ],
+                [
+                    970,
+                    40.0
+                ],
+                [
+                    829,
+                    60.0
+                ],
+                [
+                    765,
+                    80.0
+                ],
+                [
+                    733,
+                    100.0
+                ],
+                [
+                    712,
+                    120.0
+                ],
+                [
+                    698,
+                    140.0
+                ],
+                [
+                    693,
+                    160.0
+                ],
+                [
+                    690,
+                    180.0
+                ],
+                [
+                    685,
+                    200.0
+                ],
+                [
+                    677,
+                    220.0
+                ],
+                [
+                    674,
+                    240.0
+                ],
+                [
+                    669,
+                    260.0
+                ],
+                [
+                    664,
+                    280.0
+                ],
+                [
+                    661,
+                    300.0
+                ],
+                [
+                    656,
+                    320.0
+                ],
+                [
+                    653,
+                    340.0
+                ],
+                [
+                    650,
+                    360.0
+                ],
+                [
+                    645,
+                    380.0
+                ]
+            ],
+            "test_results": [
+                {
+                    "known_distance": 30.0,
+                    "estimated_distance": 30.5,
+                    "error_percent": 1.67,
+                    "feet_y": 1169,
+                    "frame_number": 203,
+                    "timestamp": "2026-01-02T15:29:32.599795"
+                },
+                {
+                    "known_distance": 40.0,
+                    "estimated_distance": 39.05,
+                    "error_percent": -2.39,
+                    "feet_y": 990,
+                    "frame_number": 295,
+                    "timestamp": "2026-01-02T15:30:34.508937"
+                },
+                {
+                    "known_distance": 70.0,
+                    "estimated_distance": 70.0,
+                    "error_percent": 0.0,
+                    "feet_y": 797,
+                    "frame_number": 583,
+                    "timestamp": "2026-01-02T15:32:02.028910"
+                },
+                {
+                    "known_distance": 70.0,
+                    "estimated_distance": 96.88,
+                    "error_percent": 38.39,
+                    "feet_y": 738,
+                    "frame_number": 910,
+                    "timestamp": "2026-01-02T16:00:38.760134"
+                },
+                {
+                    "known_distance": 100.0,
+                    "estimated_distance": 96.88,
+                    "error_percent": -3.12,
+                    "feet_y": 738,
+                    "frame_number": 911,
+                    "timestamp": "2026-01-02T16:00:54.276864"
+                },
+                {
+                    "known_distance": 130.0,
+                    "estimated_distance": 125.71,
+                    "error_percent": -3.3,
+                    "feet_y": 708,
+                    "frame_number": 1172,
+                    "timestamp": "2026-01-02T16:01:47.434350"
+                },
+                {
+                    "known_distance": 130.0,
+                    "estimated_distance": 122.86,
+                    "error_percent": -5.49,
+                    "feet_y": 710,
+                    "frame_number": 1174,
+                    "timestamp": "2026-01-02T16:03:13.431594"
+                },
+                {
+                    "known_distance": 130.0,
+                    "estimated_distance": 130.0,
+                    "error_percent": 0.0,
+                    "feet_y": 705,
+                    "frame_number": 1293,
+                    "timestamp": "2026-01-02T16:03:40.314831"
+                },
+                {
+                    "known_distance": 140.0,
+                    "estimated_distance": 138.57,
+                    "error_percent": -1.02,
+                    "feet_y": 699,
+                    "frame_number": 1492,
+                    "timestamp": "2026-01-02T16:04:07.170610"
+                }
+            ]
+        },
+        "UDH_3x": {
+            "name": "UDH_3x",
+            "created_at": "2026-01-03T12:09:55.643518",
+            "metadata": {
+                "fps": 29.992618560791016,
+                "total_frames": 3578,
+                "source_path": "/Users/michaelnawas/Downloads/UHD_3x.mp4",
+                "source_type": "video",
+                "zoom_label": "3x",
+                "resolution": {
+                    "width": 1080,
+                    "height": 1920
+                }
+            },
+            "distance_list": [
+                20.0,
+                40.0,
+                60.0,
+                80.0,
+                100.0,
+                120.0,
+                140.0,
+                200.0,
+                240.0,
+                280.0,
+                320.0,
+                380.0
+            ],
+            "calibration_points": [
+                [
+                    1397,
+                    20.0
+                ],
+                [
+                    970,
+                    40.0
+                ],
+                [
+                    829,
+                    60.0
+                ],
+                [
+                    765,
+                    80.0
+                ],
+                [
+                    733,
+                    100.0
+                ],
+                [
+                    712,
+                    120.0
+                ],
+                [
+                    696,
+                    140.0
+                ],
+                [
+                    677,
+                    200.0
+                ],
+                [
+                    669,
+                    240.0
+                ],
+                [
+                    661,
+                    280.0
+                ],
+                [
+                    653,
+                    320.0
+                ],
+                [
+                    642,
+                    380.0
+                ]
+            ],
+            "test_results": [
+                {
+                    "known_distance": 30.0,
+                    "estimated_distance": 30.68,
+                    "error_percent": 2.26,
+                    "feet_y": 1169,
+                    "frame_number": 199,
+                    "timestamp": "2026-01-03T12:11:55.317256"
+                },
+                {
+                    "known_distance": 40.0,
+                    "estimated_distance": 39.02,
+                    "error_percent": -2.46,
+                    "feet_y": 991,
+                    "frame_number": 310,
+                    "timestamp": "2026-01-03T12:12:30.382576"
+                },
+                {
+                    "known_distance": 70.0,
+                    "estimated_distance": 70.31,
+                    "error_percent": 0.45,
+                    "feet_y": 796,
+                    "frame_number": 584,
+                    "timestamp": "2026-01-03T12:13:06.295534"
+                },
+                {
+                    "known_distance": 100.0,
+                    "estimated_distance": 96.88,
+                    "error_percent": -3.12,
+                    "feet_y": 738,
+                    "frame_number": 909,
+                    "timestamp": "2026-01-03T12:13:51.597438"
+                },
+                {
+                    "known_distance": 130.0,
+                    "estimated_distance": 127.5,
+                    "error_percent": -1.92,
+                    "feet_y": 706,
+                    "frame_number": 1192,
+                    "timestamp": "2026-01-03T12:14:51.697174"
+                },
+                {
+                    "known_distance": 140.0,
+                    "estimated_distance": 140.0,
+                    "error_percent": 0.0,
+                    "feet_y": 696,
+                    "frame_number": 1473,
+                    "timestamp": "2026-01-03T12:15:29.249976"
+                },
+                {
+                    "known_distance": 170.0,
+                    "estimated_distance": 146.32,
+                    "error_percent": -13.93,
+                    "feet_y": 694,
+                    "frame_number": 1747,
+                    "timestamp": "2026-01-03T12:24:00.712077"
+                },
+                {
+                    "known_distance": 190.0,
+                    "estimated_distance": 165.26,
+                    "error_percent": -13.02,
+                    "feet_y": 688,
+                    "frame_number": 1931,
+                    "timestamp": "2026-01-03T12:24:42.094704"
+                },
+                {
+                    "known_distance": 220.0,
+                    "estimated_distance": 196.84,
+                    "error_percent": -10.53,
+                    "feet_y": 678,
+                    "frame_number": 2428,
+                    "timestamp": "2026-01-03T12:28:29.082482"
+                }
+            ]
+        },
+        "UDH_5x": {
+            "name": "UDH_5x",
+            "created_at": "2026-01-03T12:36:38.734637",
+            "metadata": {
+                "fps": 30.00861358642578,
+                "total_frames": 3550,
+                "source_path": "/Users/michaelnawas/Downloads/UHD_5x.mp4",
+                "source_type": "video",
+                "zoom_label": "5x",
+                "resolution": {
+                    "width": 1080,
+                    "height": 1920
+                }
+            },
+            "distance_list": [
+                20.0,
+                40.0,
+                60.0,
+                80.0,
+                100.0,
+                120.0,
+                140.0,
+                160.0,
+                180.0,
+                200.0,
+                220.0,
+                240.0,
+                260.0,
+                280.0,
+                300.0,
+                320.0,
+                340.0,
+                360.0,
+                380.0
+            ],
+            "calibration_points": [
+                [
+                    1608,
+                    20.0
+                ],
+                [
+                    866,
+                    40.0
+                ],
+                [
+                    618,
+                    60.0
+                ],
+                [
+                    512,
+                    80.0
+                ],
+                [
+                    458,
+                    100.0
+                ],
+                [
+                    421,
+                    120.0
+                ],
+                [
+                    397,
+                    140.0
+                ],
+                [
+                    386,
+                    160.0
+                ],
+                [
+                    378,
+                    180.0
+                ],
+                [
+                    370,
+                    200.0
+                ],
+                [
+                    365,
+                    220.0
+                ],
+                [
+                    360,
+                    240.0
+                ],
+                [
+                    354,
+                    260.0
+                ],
+                [
+                    349,
+                    280.0
+                ],
+                [
+                    338,
+                    300.0
+                ],
+                [
+                    320,
+                    320.0
+                ],
+                [
+                    317,
+                    340.0
+                ],
+                [
+                    312,
+                    360.0
+                ],
+                [
+                    304,
+                    380.0
+                ]
+            ],
+            "test_results": [
+                {
+                    "known_distance": 30.0,
+                    "estimated_distance": 31.89,
+                    "error_percent": 6.29,
+                    "feet_y": 1167,
+                    "frame_number": 212,
+                    "timestamp": "2026-01-03T12:37:39.854681"
+                },
+                {
+                    "known_distance": 70.0,
+                    "estimated_distance": 68.11,
+                    "error_percent": -2.7,
+                    "feet_y": 575,
+                    "frame_number": 525,
+                    "timestamp": "2026-01-03T12:38:21.762742"
+                },
+                {
+                    "known_distance": 110.0,
+                    "estimated_distance": 107.03,
+                    "error_percent": -2.7,
+                    "feet_y": 445,
+                    "frame_number": 864,
+                    "timestamp": "2026-01-03T12:39:24.692930"
+                },
+                {
+                    "known_distance": 150.0,
+                    "estimated_distance": 145.45,
+                    "error_percent": -3.03,
+                    "feet_y": 394,
+                    "frame_number": 1168,
+                    "timestamp": "2026-01-03T12:40:20.308761"
+                },
+                {
+                    "known_distance": 190.0,
+                    "estimated_distance": 182.5,
+                    "error_percent": -3.95,
+                    "feet_y": 377,
+                    "frame_number": 1428,
+                    "timestamp": "2026-01-03T12:41:05.984359"
+                },
+                {
+                    "known_distance": 230.0,
+                    "estimated_distance": 212.0,
+                    "error_percent": -7.83,
+                    "feet_y": 367,
+                    "frame_number": 1727,
+                    "timestamp": "2026-01-03T12:42:14.811355"
+                },
+                {
+                    "known_distance": 270.0,
+                    "estimated_distance": 260.0,
+                    "error_percent": -3.7,
+                    "feet_y": 354,
+                    "frame_number": 2105,
+                    "timestamp": "2026-01-03T12:43:32.073128"
+                },
+                {
+                    "known_distance": 310.0,
+                    "estimated_distance": 287.27,
+                    "error_percent": -7.33,
+                    "feet_y": 345,
+                    "frame_number": 2490,
+                    "timestamp": "2026-01-03T12:44:26.741784"
+                },
+                {
+                    "known_distance": 350.0,
+                    "estimated_distance": 333.33,
+                    "error_percent": -4.76,
+                    "feet_y": 318,
+                    "frame_number": 2914,
+                    "timestamp": "2026-01-03T12:45:36.468608"
+                },
+                {
+                    "known_distance": 370.0,
+                    "estimated_distance": 344.0,
+                    "error_percent": -7.03,
+                    "feet_y": 316,
+                    "frame_number": 3006,
+                    "timestamp": "2026-01-03T12:46:03.731658"
+                },
+                {
+                    "known_distance": 380.0,
+                    "estimated_distance": 377.5,
+                    "error_percent": -0.66,
+                    "feet_y": 305,
+                    "frame_number": 3240,
+                    "timestamp": "2026-01-03T12:46:40.251790"
+                }
+            ]
+        },
+        "UDH_2x": {
+            "name": "UDH_2x",
+            "created_at": "2026-01-03T12:57:11.125526",
+            "metadata": {
+                "fps": 30.010578155517578,
+                "total_frames": 4042,
+                "source_path": "/Users/michaelnawas/Downloads/UHD_2x.mp4",
+                "source_type": "video",
+                "zoom_label": "2x",
+                "resolution": {
+                    "width": 1080,
+                    "height": 1920
+                }
+            },
+            "distance_list": [
+                20.0,
+                40.0,
+                60.0,
+                80.0,
+                100.0,
+                120.0,
+                140.0,
+                160.0,
+                200.0,
+                220.0,
+                280.0,
+                300.0,
+                340.0,
+                380.0
+            ],
+            "calibration_points": [
+                [
+                    1264,
+                    20.0
+                ],
+                [
+                    965,
+                    40.0
+                ],
+                [
+                    866,
+                    60.0
+                ],
+                [
+                    826,
+                    80.0
+                ],
+                [
+                    802,
+                    100.0
+                ],
+                [
+                    786,
+                    120.0
+                ],
+                [
+                    776,
+                    140.0
+                ],
+                [
+                    773,
+                    160.0
+                ],
+                [
+                    768,
+                    200.0
+                ],
+                [
+                    765,
+                    220.0
+                ],
+                [
+                    757,
+                    280.0
+                ],
+                [
+                    749,
+                    300.0
+                ],
+                [
+                    741,
+                    340.0
+                ],
+                [
+                    736,
+                    380.0
+                ]
+            ],
+            "test_results": [
+                {
+                    "known_distance": 30.0,
+                    "estimated_distance": 30.5,
+                    "error_percent": 1.67,
+                    "feet_y": 1107,
+                    "frame_number": 170,
+                    "timestamp": "2026-01-03T12:58:00.703034"
+                },
+                {
+                    "known_distance": 60.0,
+                    "estimated_distance": 57.17,
+                    "error_percent": -4.71,
+                    "feet_y": 880,
+                    "frame_number": 435,
+                    "timestamp": "2026-01-03T12:58:43.831283"
+                },
+                {
+                    "known_distance": 90.0,
+                    "estimated_distance": 85.0,
+                    "error_percent": -5.56,
+                    "feet_y": 820,
+                    "frame_number": 680,
+                    "timestamp": "2026-01-03T13:02:23.014117"
+                },
+                {
+                    "known_distance": 110.0,
+                    "estimated_distance": 107.5,
+                    "error_percent": -2.27,
+                    "feet_y": 796,
+                    "frame_number": 983,
+                    "timestamp": "2026-01-03T13:03:35.285691"
+                },
+                {
+                    "known_distance": 150.0,
+                    "estimated_distance": 146.67,
+                    "error_percent": -2.22,
+                    "feet_y": 775,
+                    "frame_number": 1315,
+                    "timestamp": "2026-01-03T13:06:10.423286"
+                },
+                {
+                    "known_distance": 190.0,
+                    "estimated_distance": 168.0,
+                    "error_percent": -11.58,
+                    "feet_y": 772,
+                    "frame_number": 1483,
+                    "timestamp": "2026-01-03T13:09:07.417011"
+                }
+            ]
+        },
+        "HD_5x": {
+            "name": "HD_5x",
+            "created_at": "2026-01-03T15:19:18.447040",
+            "metadata": {
+                "fps": 29.997316360473633,
+                "total_frames": 2686,
+                "source_path": "/Users/michaelnawas/Downloads/HD_5x.mp4",
+                "source_type": "video",
+                "zoom_label": "5x",
+                "resolution": {
+                    "width": 720,
+                    "height": 1280
+                }
+            },
+            "distance_list": [
+                20.0,
+                40.0,
+                60.0,
+                80.0,
+                100.0,
+                120.0,
+                140.0,
+                160.0,
+                180.0,
+                200.0,
+                220.0,
+                240.0,
+                260.0,
+                280.0,
+                300.0,
+                320.0,
+                340.0,
+                360.0,
+                380.0
+            ],
+            "calibration_points": [
+                [
+                    1034,
+                    20.0
+                ],
+                [
+                    535,
+                    40.0
+                ],
+                [
+                    366,
+                    60.0
+                ],
+                [
+                    293,
+                    80.0
+                ],
+                [
+                    257,
+                    100.0
+                ],
+                [
+                    229,
+                    120.0
+                ],
+                [
+                    213,
+                    140.0
+                ],
+                [
+                    209,
+                    160.0
+                ],
+                [
+                    206,
+                    180.0
+                ],
+                [
+                    200,
+                    200.0
+                ],
+                [
+                    197,
+                    220.0
+                ],
+                [
+                    192,
+                    240.0
+                ],
+                [
+                    188,
+                    260.0
+                ],
+                [
+                    184,
+                    280.0
+                ],
+                [
+                    179,
+                    300.0
+                ],
+                [
+                    172,
+                    320.0
+                ],
+                [
+                    165,
+                    340.0
+                ],
+                [
+                    160,
+                    360.0
+                ],
+                [
+                    156,
+                    380.0
+                ]
+            ],
+            "test_results": [
+                {
+                    "known_distance": 20.0,
+                    "estimated_distance": 20.0,
+                    "error_percent": 0.0,
+                    "feet_y": 1043,
+                    "frame_number": 236,
+                    "timestamp": "2026-01-03T15:20:00.277808"
+                },
+                {
+                    "known_distance": 40.0,
+                    "estimated_distance": 40.12,
+                    "error_percent": 0.3,
+                    "feet_y": 534,
+                    "frame_number": 354,
+                    "timestamp": "2026-01-03T15:22:50.956946"
+                },
+                {
+                    "known_distance": 60.0,
+                    "estimated_distance": 61.92,
+                    "error_percent": 3.2,
+                    "feet_y": 359,
+                    "frame_number": 500,
+                    "timestamp": "2026-01-03T15:28:13.091586"
+                },
+                {
+                    "known_distance": 80.0,
+                    "estimated_distance": 87.78,
+                    "error_percent": 9.72,
+                    "feet_y": 279,
+                    "frame_number": 601,
+                    "timestamp": "2026-01-03T15:29:22.368738"
+                },
+                {
+                    "known_distance": 100.0,
+                    "estimated_distance": 115.71,
+                    "error_percent": 15.71,
+                    "feet_y": 235,
+                    "frame_number": 742,
+                    "timestamp": "2026-01-03T15:31:25.819017"
+                }
+            ]
+        }
+    }
+}

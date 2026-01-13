@@ -99,7 +99,7 @@ def _vision_worker():
             continue
         
         # --- YOLO inference (runs at full CUDA speed) ---
-        human, center, bbox, conf = detect_human(frame)
+        human, center, bbox, conf, class_id = detect_human(frame)
         
         # --- Update shared state (atomic overwrite) ---
         with _vision_state_lock:

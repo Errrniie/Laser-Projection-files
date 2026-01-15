@@ -1,0 +1,52 @@
+{
+  "yolo": {
+    "model_path": "yolov8n.pt",
+    "device": "cuda",
+    "conf_thresh": 0.4,
+    "nms_iou_threshold": 0.5,
+    "imgsz": 1280,
+    "classes": [
+      0
+    ],
+    "verbose": false
+  },
+  "tiling": {
+    "use_tiled_inference": true,
+    "grid_rows": 3,
+    "grid_cols": 3,
+    "overlap_percent": 0.2,
+    "merge_iou_threshold": 0.5
+  },
+  "camera": {
+    "camera_index": 4,
+    "fallback_index": 0,
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "buffer_size": 1,
+    "fourcc": "MJPG"
+  },
+  "system": {
+    "staleness_threshold_s": 0.5,
+    "vision_loop_interval": 0.033,
+    "display_queue_maxsize": 1,
+    "window_name": "Goose Vision",
+    "show_confidence": true,
+    "show_crosshair": true,
+    "bbox_color": [
+      0,
+      255,
+      0
+    ],
+    "crosshair_color": [
+      255,
+      0,
+      0
+    ],
+    "bbox_thickness": 2,
+    "crosshair_size": 20,
+    "enable_display": true,
+    "print_fps": false,
+    "print_detections": false
+  }
+}

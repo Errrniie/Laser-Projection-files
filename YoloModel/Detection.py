@@ -1,22 +1,21 @@
 from ultralytics import YOLO
 from typing import List, Tuple, Optional
+from Config.vision_config import get_yolo_config, get_tiling_config
 
-CONF_THRESH = 0.6
-MODEL_PATH = "yolov8s.pt"
-DEVICE = "cpu"
+# Load configuration
+_yolo_config = get_yolo_config()
+_tiling_config = get_tiling_config()
 
-# Image size for YOLO inference
-# Higher values = better detection of small/distant objects, but slower
-# Common values: 640 (default/fast), 960, 1280 (best for distant objects)
-# For 1080p video, use 1280 to avoid shrinking the frame too much
-IMGSZ = 1280
+# Configuration-based constants (for backward compatibility)
+CONF_THRESH = _yolo_config.conf_thresh
+MODEL_PATH = _yolo_config.model_path
+DEVICE = _yolo_config.device
+IMGSZ = _yolo_config.imgsz
+USE_TILED_INFERENCE = _tiling_config.use_tiled_inference
+NMS_IOU_THRESHOLD = _yolo_config.nms_iou_threshold
 
-# Tiled inference settings
-USE_TILED_INFERENCE = True  # Set to False to disable tiling
-NMS_IOU_THRESHOLD = 0.5     # IoU threshold for merging detections
-
-model = YOLO(MODEL_PATH)
-model.to(DEVICE)
+model = YOLO(_yolo_config.model_path)
+model.to(_yolo_config.device)
 
 
 def _run_yolo_inference(frame, imgsz=None):
@@ -34,11 +33,11 @@ def _run_yolo_inference(frame, imgsz=None):
     
     results = model(
         frame,
-        device=DEVICE,
-        conf=CONF_THRESH,
-        classes=[0],
+        device=_yolo_config.device,
+        conf=_yolo_config.conf_thresh,
+        classes=_yolo_config.classes,
         imgsz=img_size,
-        verbose=False
+        verbose=_yolo_config.verbose
     )
     
     detections = []

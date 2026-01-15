@@ -14,14 +14,17 @@ downscaling a 4K frame to YOLO's inference resolution.
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
+from Config.vision_config import get_tiling_config
 
+# Load configuration
+_tiling_config = get_tiling_config()
 
 @dataclass
 class TileConfig:
     """Configuration for tile-based inference."""
-    grid_rows: int = 2          # Number of tile rows
-    grid_cols: int = 2          # Number of tile columns
-    overlap_percent: float = 0.15  # Overlap between tiles (0.0 to 0.5)
+    grid_rows: int = _tiling_config.grid_rows          # Number of tile rows
+    grid_cols: int = _tiling_config.grid_cols          # Number of tile columns
+    overlap_percent: float = _tiling_config.overlap_percent  # Overlap between tiles (0.0 to 0.5)
     
     def __post_init__(self):
         """Validate configuration."""
@@ -218,18 +221,20 @@ def calculate_iou(box1: Detection, box2: Detection) -> float:
 
 def non_max_suppression(
     detections: List[Detection],
-    iou_threshold: float = 0.5
+    iou_threshold: float = None
 ) -> List[Detection]:
     """
     Apply Non-Maximum Suppression to remove duplicate detections.
     
     Args:
         detections: List of all detections from all tiles
-        iou_threshold: IoU threshold for considering boxes as duplicates
+        iou_threshold: IoU threshold for considering boxes as duplicates (uses config default if None)
     
     Returns:
         Filtered list of detections with duplicates removed
     """
+    if iou_threshold is None:
+        iou_threshold = _tiling_config.merge_iou_threshold
     if not detections:
         return []
     
@@ -255,7 +260,7 @@ def non_max_suppression(
 def merge_tile_detections(
     all_detections: List[List[Detection]],
     tiles: List[Tile],
-    iou_threshold: float = 0.5
+    iou_threshold: float = None
 ) -> List[Detection]:
     """
     Merge detections from multiple tiles into a single list.
@@ -266,12 +271,15 @@ def merge_tile_detections(
     
     Args:
         all_detections: List of detection lists, one per tile
-        tiles: List of tiles corresponding to each detection list
-        iou_threshold: IoU threshold for NMS
+        tiles: Corresponding tile information for coordinate conversion
+        iou_threshold: IoU threshold for NMS (uses config default if None)
     
     Returns:
-        Merged and deduplicated list of detections in frame coordinates
+        Merged and filtered detections in frame coordinates
     """
+    if iou_threshold is None:
+        iou_threshold = _tiling_config.merge_iou_threshold
+    
     # Convert all detections to frame coordinates
     frame_detections = []
     for dets, tile in zip(all_detections, tiles):
@@ -300,27 +308,35 @@ def get_best_detection(detections: List[Detection]) -> Optional[Detection]:
 
 
 # Default tile configuration
-DEFAULT_TILE_CONFIG = TileConfig(
-    grid_rows=2,
-    grid_cols=2,
-    overlap_percent=0.15
+_default_tile_config = TileConfig(
+    grid_rows=_tiling_config.grid_rows,
+    grid_cols=_tiling_config.grid_cols,
+    overlap_percent=_tiling_config.overlap_percent
 )
 
 
-def set_tile_config(rows: int = 2, cols: int = 2, overlap: float = 0.15):
+def set_tile_config(rows: int = None, cols: int = None, overlap: float = None):
     """
     Update the default tile configuration.
     
     Args:
-        rows: Number of tile rows (default 2)
-        cols: Number of tile columns (default 2)
-        overlap: Overlap percentage between tiles (default 0.15 = 15%)
+        rows: Number of tile rows (uses config default if None)
+        cols: Number of tile columns (uses config default if None)  
+        overlap: Overlap percentage between tiles (uses config default if None)
     """
-    global DEFAULT_TILE_CONFIG
-    DEFAULT_TILE_CONFIG = TileConfig(rows, cols, overlap)
+    global _default_tile_config
+    if rows is None:
+        rows = _tiling_config.grid_rows
+    if cols is None:
+        cols = _tiling_config.grid_cols
+    if overlap is None:
+        overlap = _tiling_config.overlap_percent
+    _default_tile_config = TileConfig(rows, cols, overlap)
     print(f"Tile config set to: {rows}x{cols} grid with {overlap*100:.0f}% overlap")
 
 
 def get_tile_config() -> TileConfig:
+    """Get the current default tile configuration."""
+    return _default_tile_config
     """Get the current default tile configuration."""
     return DEFAULT_TILE_CONFIG

@@ -7,6 +7,8 @@ Supports both video and live camera testing with test point recording.
 import time
 import sys
 import os
+import tkinter as tk
+from tkinter import simpledialog, messagebox
 
 # Adjust the Python path to include the root directory of the project
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -219,6 +221,113 @@ class VideoTester:
         print(f"Total test points: {len(results)}")
         print("="*60 + "\n")
     
+    def _record_test_point_gui(self):
+        """Record a test point using GUI dialog instead of terminal."""
+        if not self.last_detection or not self.last_detection[0]:
+            messagebox.showwarning("No Detection", 
+                "No human detected. Cannot record test point.",
+                parent=self._control_panel.root)
+            return
+        
+        feet_center = self.last_detection[4]
+        if feet_center is None:
+            messagebox.showwarning("Error", 
+                "Could not determine feet position.",
+                parent=self._control_panel.root)
+            return
+        
+        # Pause video for input
+        was_paused = self.video.is_paused
+        self.video.is_paused = True
+        
+        # Get estimated distance for display
+        estimated_dist = get_distance(feet_center[1])
+        
+        # Show dialog to get known distance
+        known_dist = simpledialog.askfloat(
+            "Record Test Point",
+            f"Estimated distance: {estimated_dist:.2f} ft\n\nEnter known distance (feet):",
+            parent=self._control_panel.root,
+            minvalue=0.0
+        )
+        
+        if known_dist is not None:
+            error_percent = ((estimated_dist - known_dist) / known_dist) * 100 if known_dist != 0 else 0
+            
+            test_result = {
+                "known_distance": known_dist,
+                "estimated_distance": round(estimated_dist, 2),
+                "error_percent": round(error_percent, 2),
+                "feet_y": feet_center[1],
+                "frame_number": self.video.frame_number
+            }
+            
+            # Save to storage
+            add_test_result(self.calibration_name, test_result)
+            
+            # Add to session results
+            self.test_session_results.append(test_result)
+            
+            # Show confirmation
+            messagebox.showinfo("Test Point Recorded",
+                f"Known: {known_dist} ft\n"
+                f"Estimated: {estimated_dist:.2f} ft\n"
+                f"Error: {error_percent:.1f}%",
+                parent=self._control_panel.root)
+            
+            print(f"Recorded: Known={known_dist}ft, Est={estimated_dist:.2f}ft, Error={error_percent:.1f}%")
+        
+        # Restore pause state
+        self.video.is_paused = was_paused
+    
+    def _show_results_gui(self):
+        """Show test results in a GUI dialog."""
+        results = get_test_results(self.calibration_name)
+        
+        if not results:
+            messagebox.showinfo("Test Results", 
+                "No test results recorded yet.",
+                parent=self._control_panel.root)
+            return
+        
+        # Build results text
+        lines = [f"Test Results for: {self.calibration_name}\n"]
+        lines.append(f"{'Known':>8} {'Est':>8} {'Error':>8}")
+        lines.append("-" * 28)
+        
+        total_error = 0
+        for r in results:
+            known = r.get("known_distance", 0)
+            est = r.get("estimated_distance", 0)
+            error = r.get("error_percent", 0)
+            lines.append(f"{known:>8.1f} {est:>8.2f} {error:>7.1f}%")
+            total_error += abs(error)
+        
+        avg_error = total_error / len(results)
+        lines.append("-" * 28)
+        lines.append(f"Average error: {avg_error:.2f}%")
+        lines.append(f"Total points: {len(results)}")
+        
+        # Show in a dialog
+        result_text = "\n".join(lines)
+        
+        # Create a custom dialog for better display
+        dialog = tk.Toplevel(self._control_panel.root)
+        dialog.title("Test Results")
+        dialog.geometry("320x400")
+        dialog.transient(self._control_panel.root)
+        dialog.grab_set()
+        
+        text_widget = tk.Text(dialog, font=('Courier', 10), wrap=tk.NONE)
+        text_widget.insert('1.0', result_text)
+        text_widget.config(state='disabled')
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        tk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=(0, 10))
+        
+        # Also print to terminal
+        self._show_all_results()
+    
     def run(self):
         """Run the test session."""
         self.video = VideoHandler(self.video_path)
@@ -232,21 +341,29 @@ class VideoTester:
         # Track if we should quit
         self._should_quit = False
         
+        # Track last processed frame to avoid redundant YOLO inference
+        self._last_processed_frame_num = -1
+        
         def on_quit():
             self._should_quit = True
         
-        # Create the control panel window
+        # Create the control panel window with test callbacks
         control_panel = VideoControlPanel(
             self.video,
             extra_text_callback=self._create_extra_text,
-            on_quit=on_quit
+            on_quit=on_quit,
+            on_record_test=self._record_test_point_gui,
+            on_show_results=self._show_results_gui
         )
+        
+        # Store reference for GUI dialogs
+        self._control_panel = control_panel
         
         print("\n" + "="*60)
         print("VIDEO TEST MODE")
         print("="*60)
         print("Use the Control Panel window for video navigation.")
-        print("Press [R] to record test point, [T] to show results.")
+        print("Use buttons or press [R] to record, [T] to show results.")
         print("="*60 + "\n")
         
         try:
@@ -255,10 +372,14 @@ class VideoTester:
                 if frame is None:
                     break
                 
-                # Run detection on current frame (original resolution)
-                human, center, bbox, conf = detect_human(frame)
-                feet_center = self._get_feet_center(bbox)
-                self.last_detection = (human, center, bbox, conf, feet_center)
+                # Only run YOLO detection if the frame has changed
+                current_frame_num = self.video.frame_number
+                if current_frame_num != self._last_processed_frame_num:
+                    # Run detection on current frame (original resolution)
+                    human, center, bbox, conf = detect_human(frame)
+                    feet_center = self._get_feet_center(bbox)
+                    self.last_detection = (human, center, bbox, conf, feet_center)
+                    self._last_processed_frame_num = current_frame_num
                 
                 # Resize for display FIRST, then draw overlays for crisp text
                 vis_resized, scale = resize_for_display(frame.copy(), max_width=1280, max_height=720)
@@ -273,24 +394,27 @@ class VideoTester:
                 # Update control panel
                 control_panel.update()
                 
-                key = cv2.waitKey(30) & 0xFF
+                # Use shorter wait when paused (responsive) vs playing (limit FPS)
+                wait_time = 10 if self.video.is_paused else 1
+                key = cv2.waitKey(wait_time) & 0xFF
                 
                 # Handle video controls
                 should_quit, action = handle_video_key(key, self.video)
                 if should_quit:
                     break
                 
-                # Handle test-specific keys
+                # Handle test-specific keys (use GUI versions)
                 if key == ord('r') or key == ord('R'):
-                    self._record_test_point()
+                    self._record_test_point_gui()
                 
                 elif key == ord('t') or key == ord('T'):
-                    self._show_all_results()
+                    self._show_results_gui()
         
         finally:
             control_panel.destroy()
             self.video.close()
             cv2.destroyAllWindows()
+            cv2.waitKey(1)  # Process any remaining OpenCV events
             
             # Show final summary
             if self.test_session_results:
@@ -310,7 +434,11 @@ def run_video_test(calibration_name, video_path=None):
     """
     try:
         tester = VideoTester(calibration_name, video_path)
-        return tester.run()
+        result = tester.run()
+        # Give OpenCV time to clean up windows
+        cv2.destroyAllWindows()
+        cv2.waitKey(100)
+        return result
     except ValueError as e:
         print(f"Error: {e}")
         return False

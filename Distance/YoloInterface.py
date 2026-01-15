@@ -5,6 +5,11 @@ from YoloModel.CameraThread import CameraThread
 import cv2
 import threading
 import queue
+from Config.vision_config import get_camera_config, get_system_config
+
+# Load configuration
+_camera_config = get_camera_config()
+_system_config = get_system_config()
 
 # --- Globals ---
 camera = None
@@ -15,7 +20,7 @@ _vision_queue = queue.Queue(maxsize=1)
 _stop_event = threading.Event()
 
 # --- Constants ---
-_VISION_LOOP_INTERVAL = 0.05  # Process frames at 10Hz
+_VISION_LOOP_INTERVAL = _system_config.vision_loop_interval  # Process frames at configurable Hz
 
 def start_vision():
     """Initializes and starts all vision-related threads."""
@@ -23,12 +28,22 @@ def start_vision():
     print("Vision system starting...")
 
     if camera is None:
-        # Using a lower-level camera index for testing if 4 is not available
+        # Using configured camera settings
         try:
-            camera = CameraThread(index=4, width=640, height=480, fps=30)
+            camera = CameraThread(
+                index=_camera_config.camera_index, 
+                width=_camera_config.width, 
+                height=_camera_config.height, 
+                fps=_camera_config.fps
+            )
         except Exception:
-            print("Could not open camera at index 4, trying index 0.")
-            camera = CameraThread(index=0, width=640, height=480, fps=30)
+            print(f"Could not open camera at index {_camera_config.camera_index}, trying index {_camera_config.fallback_index}.")
+            camera = CameraThread(
+                index=_camera_config.fallback_index, 
+                width=_camera_config.width, 
+                height=_camera_config.height, 
+                fps=_camera_config.fps
+            )
 
     _stop_event.clear()
     

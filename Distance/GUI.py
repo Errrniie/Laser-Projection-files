@@ -29,8 +29,7 @@ class CalibrationManagerGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Distance Calibration Manager")
-        self.root.geometry("800x600")
-        self.root.minsize(700, 500)
+        # Will auto-resize after widgets are created
         
         # Configure style
         self.style = ttk.Style()
@@ -40,6 +39,7 @@ class CalibrationManagerGUI:
         
         self._create_widgets()
         self._refresh_calibration_list()
+        self._auto_resize_window()
     
     def _create_widgets(self):
         """Create all GUI widgets."""
@@ -151,6 +151,10 @@ class CalibrationManagerGUI:
                                  command=self._refresh_calibration_list, style='Action.TButton')
         btn_refresh.pack(fill=tk.X, pady=2)
         
+        btn_settings = ttk.Button(manage_frame, text="⚙️ Settings", 
+                                  command=self._open_settings, style='Action.TButton')
+        btn_settings.pack(fill=tk.X, pady=2)
+        
         # Status bar at bottom
         self.status_var = tk.StringVar(value="Ready")
         status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
@@ -260,7 +264,11 @@ class CalibrationManagerGUI:
             else:
                 return
         
+        # Update status
         self.status_var.set(f"Testing {cal_name}...")
+        self.root.update()
+        
+        # Hide main window during test
         self.root.withdraw()
         
         try:
@@ -268,7 +276,10 @@ class CalibrationManagerGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Test failed: {e}")
         finally:
+            # Restore main window
             self.root.deiconify()
+            self.root.lift()
+            self.status_var.set("Ready")
             self._refresh_calibration_list()
     
     def _test_live(self):
@@ -408,6 +419,51 @@ class CalibrationManagerGUI:
                 self._refresh_calibration_list()
             else:
                 messagebox.showerror("Error", "Failed to clear test results.")
+    
+    def _auto_resize_window(self):
+        """Auto-resize window to fit all content with some padding."""
+        self.root.update_idletasks()  # Ensure all widgets are rendered
+        
+        # Get required size for all widgets
+        req_width = self.root.winfo_reqwidth()
+        req_height = self.root.winfo_reqheight()
+        
+        # Add padding and ensure minimum size
+        width = max(800, req_width + 50)  # Minimum 800px width
+        height = max(600, req_height + 50)  # Minimum 600px height
+        
+        # Set the geometry and center the window
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(700, 500)  # Set minimum size
+    
+    def _open_settings(self):
+        """Open the configuration settings GUI."""
+        try:
+            import subprocess
+            import sys
+            
+            # Get the project root directory (parent of Distance folder)
+            project_root = os.path.dirname(os.path.dirname(__file__))
+            launch_script = os.path.join(project_root, 'Config', 'launch_config.py')
+            
+            if os.path.exists(launch_script):
+                # Launch config launcher with proper working directory
+                env = os.environ.copy()
+                env['PYTHONPATH'] = project_root + ':' + env.get('PYTHONPATH', '')
+                
+                subprocess.Popen([sys.executable, launch_script], 
+                               cwd=project_root, 
+                               env=env)
+                self.status_var.set("Opened configuration launcher")
+            else:
+                messagebox.showerror("Error", "Configuration launcher not found")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open settings: {e}")
     
     def run(self):
         """Start the GUI event loop."""

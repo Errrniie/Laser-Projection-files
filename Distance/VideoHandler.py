@@ -169,7 +169,8 @@ class VideoControlPanel:
     Provides buttons and displays for controlling video playback.
     """
     
-    def __init__(self, video_handler, extra_text_callback=None, on_quit=None):
+    def __init__(self, video_handler, extra_text_callback=None, on_quit=None,
+                 on_record_test=None, on_show_results=None, parent=None):
         """
         Initialize the control panel.
         
@@ -177,17 +178,38 @@ class VideoControlPanel:
             video_handler: VideoHandler instance to control
             extra_text_callback: Optional callback that returns list of extra text lines
             on_quit: Optional callback when quit is pressed
+            on_record_test: Optional callback when record test button is pressed
+            on_show_results: Optional callback when show results button is pressed
+            parent: Optional parent tkinter window
         """
         self.video_handler = video_handler
         self.extra_text_callback = extra_text_callback
         self.on_quit = on_quit
+        self.on_record_test = on_record_test
+        self.on_show_results = on_show_results
         self.running = True
         
-        # Create window in a separate thread-safe way
-        self.root = tk.Tk()
+        # Create window - use Toplevel if parent provided or Tk exists
+        if parent is not None:
+            self.root = tk.Toplevel(parent)
+            self._owns_mainloop = False
+        else:
+            try:
+                existing_root = tk._default_root
+                if existing_root is not None and existing_root.winfo_exists():
+                    self.root = tk.Toplevel(existing_root)
+                    self._owns_mainloop = False
+                else:
+                    self.root = tk.Tk()
+                    self._owns_mainloop = True
+            except:
+                self.root = tk.Tk()
+                self._owns_mainloop = True
+        
         self.root.title("Video Controls")
-        self.root.geometry("380x420")
-        self.root.resizable(False, False)
+        self.root.geometry("420x680")
+        self.root.minsize(420, 680)
+        self.root.resizable(True, True)  # Allow resizing
         self.root.attributes('-topmost', True)  # Keep on top
         
         self._create_widgets()
@@ -285,10 +307,26 @@ class VideoControlPanel:
             "A / D = -5 / +5 frames\n"
             "J / L = -30 / +30 frames\n"
             "; / ' = -60 / +60 frames\n"
+            "R = Record Test  T = Show Results\n"
             "Q / ESC = Quit"
         )
         ttk.Label(kb_frame, text=shortcuts_text, font=('Courier', 9),
                   justify=tk.LEFT).pack(anchor=tk.W)
+        
+        # Test Actions section (only shown if callbacks provided)
+        if self.on_record_test or self.on_show_results:
+            test_frame = ttk.LabelFrame(main_frame, text="Test Actions", padding="8")
+            test_frame.pack(fill=tk.X, pady=(0, 8))
+            
+            if self.on_record_test:
+                self.record_btn = ttk.Button(test_frame, text="📍 Record Test Point (R)", 
+                                             width=30, command=self._record_test)
+                self.record_btn.pack(fill=tk.X, pady=2)
+            
+            if self.on_show_results:
+                self.results_btn = ttk.Button(test_frame, text="📊 Show Results (T)", 
+                                              width=30, command=self._show_results)
+                self.results_btn.pack(fill=tk.X, pady=2)
         
         # Quit button
         ttk.Button(main_frame, text="✕ Quit (Q)", command=self._quit,
@@ -315,6 +353,17 @@ class VideoControlPanel:
         self.running = False
         if self.on_quit:
             self.on_quit()
+    
+    def _record_test(self):
+        """Handle record test button."""
+        if self.on_record_test:
+            self.on_record_test()
+        self._update_display()
+    
+    def _show_results(self):
+        """Handle show results button."""
+        if self.on_show_results:
+            self.on_show_results()
     
     def _update_display(self):
         """Update the display with current state."""
@@ -348,12 +397,22 @@ class VideoControlPanel:
     def update(self):
         """Process tkinter events and update display. Call this in the main loop."""
         if self.running:
-            self._update_display()
-            self.root.update_idletasks()
-            self.root.update()
+            try:
+                self._update_display()
+                self.root.update_idletasks()
+                self.root.update()
+            except tk.TclError:
+                # Window was destroyed
+                self.running = False
     
     def is_running(self):
         """Check if the control panel is still running."""
+        if self.running:
+            try:
+                # Verify window still exists
+                self.root.winfo_exists()
+            except tk.TclError:
+                self.running = False
         return self.running
     
     def destroy(self):

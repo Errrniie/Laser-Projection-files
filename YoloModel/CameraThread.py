@@ -1,15 +1,26 @@
 import cv2
 import threading
 import time
+from Config.vision_config import get_camera_config
+
+# Load configuration
+_camera_config = get_camera_config()
 
 class CameraThread:
-    def __init__(self, index=0, width=1080, height=720, fps=30):
-        self.cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    def __init__(self, index=None, width=None, height=None, fps=None):
+        # Use configuration defaults if not specified
+        index = index if index is not None else _camera_config.camera_index
+        width = width if width is not None else _camera_config.width  
+        height = height if height is not None else _camera_config.height
+        fps = fps if fps is not None else _camera_config.fps
+        
+        # Initialize camera with configuration
+        self.cap = cv2.VideoCapture(index, _camera_config.backend)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*_camera_config.fourcc))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, _camera_config.buffer_size)
 
         self._lock = threading.Lock()
         self._frame = None

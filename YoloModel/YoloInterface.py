@@ -7,6 +7,12 @@ import threading
 import queue
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from Config.vision_config import get_config, get_system_config, get_camera_config
+
+# Load configuration
+_config = get_config()
+_system_config = get_system_config()
+_camera_config = get_camera_config()
 
 # =============================================================================
 # Shared Vision State (latest-state model, not a queue)
@@ -27,7 +33,7 @@ _vision_state = VisionState()
 _vision_state_lock = threading.Lock()
 
 # Staleness threshold: detections older than this are considered invalid
-STALENESS_THRESHOLD_S = 0.5
+STALENESS_THRESHOLD_S = _system_config.staleness_threshold_s
 
 # --- Globals ---
 camera = None
@@ -39,7 +45,7 @@ _display_queue = queue.Queue(maxsize=1)
 _stop_event = threading.Event()
 
 # --- Constants ---
-_WINDOW_NAME = "Goose Vision"
+_WINDOW_NAME = _system_config.window_name
 
 def start_vision():
     """Initializes and starts all vision-related threads."""
@@ -47,7 +53,21 @@ def start_vision():
     print("Vision system starting...")
 
     if camera is None:
-        camera = CameraThread(index=4, width=640, height=480, fps=30)
+        try:
+            camera = CameraThread(
+                index=_camera_config.camera_index, 
+                width=_camera_config.width, 
+                height=_camera_config.height, 
+                fps=_camera_config.fps
+            )
+        except Exception:
+            print(f"Could not open camera at index {_camera_config.camera_index}, trying index {_camera_config.fallback_index}.")
+            camera = CameraThread(
+                index=_camera_config.fallback_index, 
+                width=_camera_config.width, 
+                height=_camera_config.height, 
+                fps=_camera_config.fps
+            )
     
     _stop_event.clear()
     
@@ -117,6 +137,9 @@ def _vision_worker():
 
 def _display_worker():
     """Separate thread handles all visualization"""
+    if not _system_config.enable_display:
+        return
+        
     while not _stop_event.is_set():
         try:
             frame, bbox, conf = _display_queue.get(timeout=0.1)
@@ -124,17 +147,20 @@ def _display_worker():
 
             if bbox is not None:
                 x1, y1, x2, y2 = bbox
-                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(
-                    vis, f"{conf:.2f}", (x1, y1 - 6),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1
-                )
+                cv2.rectangle(vis, (x1, y1), (x2, y2), _system_config.bbox_color, _system_config.bbox_thickness)
+                if _system_config.show_confidence:
+                    cv2.putText(
+                        vis, f"{conf:.2f}", (x1, y1 - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, _system_config.bbox_color, 1
+                    )
 
-            h, w = vis.shape[:2]
-            cv2.drawMarker(
-                vis, (w // 2, h // 2),
-                (255, 0, 0), cv2.MARKER_CROSS, 20, 2
-            )
+            if _system_config.show_crosshair:
+                h, w = vis.shape[:2]
+                cv2.drawMarker(
+                    vis, (w // 2, h // 2),
+                    _system_config.crosshair_color, cv2.MARKER_CROSS, 
+                    _system_config.crosshair_size, _system_config.bbox_thickness
+                )
 
             cv2.imshow(_WINDOW_NAME, vis)
             cv2.waitKey(1)

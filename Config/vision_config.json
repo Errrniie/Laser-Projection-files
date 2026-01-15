@@ -1,7 +1,7 @@
 {
   "yolo": {
     "model_path": "yolov8n.pt",
-    "device": "cuda",
+    "device": "cpu",
     "conf_thresh": 0.4,
     "nms_iou_threshold": 0.5,
     "imgsz": 1280,
